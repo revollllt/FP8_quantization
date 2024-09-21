@@ -105,6 +105,29 @@ class ImageNetDataLoaders(object):
         if not self._val_loader:
             root = os.path.join(self.images_dir, "val")
             val_set = torchvision.datasets.ImageFolder(root, transform=self.val_transforms)
+            
+            # 1. 按数字排序类名
+            try:
+                sorted_classes = sorted(val_set.classes, key=lambda x: int(x))
+            except ValueError:
+                raise ValueError("所有类名必须是可以转换为整数的字符串，例如 '0', '1', '2', ...")
+            
+            # # 2. 创建新的 class_to_idx 映射，将类名直接映射为其整数值
+            new_class_to_idx = {cls_name: int(cls_name) for cls_name in sorted_classes}
+            
+            # # 3. 更新数据集的 class_to_idx
+            val_set.class_to_idx = new_class_to_idx
+            # print(val_set.samples[:150])
+            # 4. 重新映射样本的类索引
+            val_set.samples = [
+                (path, val_set.class_to_idx[val_set.classes[original_class_idx]])
+                for path, original_class_idx in val_set.samples
+            ]
+            
+            # 5. 更新 targets（如果存在）
+            if hasattr(val_set, 'targets'):
+                val_set.targets = [s[1] for s in val_set.samples]
+                
             self._val_loader = torch_data.DataLoader(
                 val_set,
                 batch_size=self.batch_size,

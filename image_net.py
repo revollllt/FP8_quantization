@@ -20,12 +20,15 @@ from utils.click_options import (
 )
 from utils.qat_utils import get_dataloaders_and_model, ReestimateBNStats
 
+import torch
+import matplotlib.pyplot as plt
+import numpy as np
 
 class Config(DotDict):
     pass
 
 
-@click.group()
+@click.group()  # create a group of commands, can be used to group multiple commands together
 def fp8_cmd_group():
     logging.basicConfig(level=os.environ.get("LOGLEVEL", "INFO"))
 
@@ -65,6 +68,40 @@ def validate_quantized(config, load_type):
         )
         # Ensure we have the desired quant state
         model.set_quant_state(config.quant.weight_quant, config.quant.act_quant)
+        
+    # '''
+    # test
+    # '''
+    # val_loader = dataloaders.val_loader
+    # with torch.no_grad():
+    #     for i, data in enumerate(val_loader):
+    #         images, labels = data
+    #         print(f"Batch {i}:")
+    #         print("Image Batch Shape:", images.shape)  # e.g., [10, 3, 224, 224]
+    #         print("Labels:", labels)  # e.g., tensor([0, 0, 0, ..., 0])
+    #         output = model(data[0].to("cuda"))
+    #         print(output)
+    #         print(output.max(-1))
+    #         class_idx = labels[0].item()
+    #         class_name = val_loader.dataset.classes[class_idx]
+    #         image_path, _ = val_loader.dataset.samples[i * val_loader.batch_size]
+    #         print(f"Image {i * val_loader.batch_size}: Path={image_path}, Label={class_idx} (Class={class_name})")
+
+            
+    #         images = data[0].cpu().numpy()
+    #         image = images[0]
+    #         image = np.transpose(image, (1, 2, 0))
+    #         image = (image - image.min()) / (image.max() - image.min())
+    #         image = (image * 255).astype(np.uint8)
+            
+    #         plt.imshow(image)
+    #         plt.axis('off')  # 不显示坐标轴
+    #         plt.show()
+    #         if i == 300:
+
+    #             break
+    
+    # return
 
     # Fix ranges
     model.fix_ranges()
