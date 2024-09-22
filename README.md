@@ -13,8 +13,8 @@ fork from https://github.com/Qualcomm-AI-research/FP8-quantization
 Make sure to have Python ≥3.8 (tested with Python 3.8.10) and 
 ensure the latest version of `pip` (tested with 21.3.1):
 ```bash
-conda create -n fp8_python=3.9
-conda activate fp8_python
+conda create -n fp8_quantization=3.9
+conda activate fp8_quantization
 ```
 
 Next, install PyTorch 2.4.0 with the appropriate CUDA version (tested with CUDA 11.8):
