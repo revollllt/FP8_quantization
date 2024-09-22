@@ -7,7 +7,7 @@ model_dir="/home/zou/codes/FP8-quantization/model_dir/mobilenet_v2.pth.tar"
 
 architecture="vit_quantized"
 
-batch_size=10
+batch_size=64
 
 n_bits=8
 
