@@ -10,6 +10,8 @@ from transformers.models.vit.modeling_vit import *
 from transformers import ViTImageProcessor, ViTForImageClassification
 from PIL import Image
 import requests
+import timm
+from torchvision.models import vit_b_16
 
 from typing import Dict, List, Optional, Set, Tuple, Union
 
@@ -51,15 +53,252 @@ class VisionTransformerForImageClassification(ViTForImageClassification):
 
         return logits
 
-class QuantizedVitEmbeddings(QuantizedModel):
-    def __init__(self, vit_emb_orig, **quant_params):
+class QuantizedVitPatchEmbeddings(QuantizedActivation):
+    def __init__(self, vit_patch_emb_orig, **quant_params):
         super().__init__(**quant_params)
         specials = {}
+        
+        self.projection = quantize_model(
+            vit_patch_emb_orig.projection,
+            specials=specials,
+            **quant_params,
+        )
+        
+        self.num_channels = vit_patch_emb_orig.num_channels
+        self.image_size = vit_patch_emb_orig.image_size
+        self.patch_size = vit_patch_emb_orig.patch_size
+        self.num_patches = vit_patch_emb_orig.num_patches
+        
+    def forward(self, pixel_values: torch.Tensor, interpolate_pos_encoding: bool = False) -> torch.Tensor:
+        batch_size, num_channels, height, width = pixel_values.shape
+        if num_channels != self.num_channels:
+            raise ValueError(
+                "Make sure that the channel dimension of the pixel values match with the one set in the configuration."
+                f" Expected {self.num_channels} but got {num_channels}."
+            )
+        if not interpolate_pos_encoding:
+            if height != self.image_size[0] or width != self.image_size[1]:
+                raise ValueError(
+                    f"Input image size ({height}*{width}) doesn't match model"
+                    f" ({self.image_size[0]}*{self.image_size[1]})."
+                )
+        embeddings = self.projection(pixel_values).flatten(2).transpose(1, 2)
+        return self.quantize_activations(embeddings)
 
-class QuantizedViTModel(QuantizedModel):
+class QuantizedVitEmbeddings(QuantizedActivation):
+    def __init__(self, vit_emb_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {ViTPatchEmbeddings: QuantizedVitPatchEmbeddings}
+        
+        self.patch_embeddings = quantize_model(
+            vit_emb_orig.patch_embeddings,
+            specials=specials,
+            **quant_params,
+        )
+        
+        self.cls_token = vit_emb_orig.cls_token
+        self.position_embeddings = vit_emb_orig.position_embeddings
+        self.dropout = vit_emb_orig.dropout
+        
+    def forward(self, x):
+        batch_size, num_channels, height, width = x.shape
+        embeddings = self.patch_embeddings(x)
+
+        # add the [CLS] token to the embedded patch tokens
+        cls_tokens = self.cls_token.expand(batch_size, -1, -1)
+        embeddings = torch.cat((cls_tokens, embeddings), dim=1)
+
+        # add positional encoding to each token
+        embeddings = embeddings + self.position_embeddings
+
+        embeddings = self.dropout(embeddings)
+
+        return self.quantize_activations(embeddings)
+
+class QuantizedViTImmediate(QuantizedActivation):
+    def __init__(self, vit_int_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {}
+        
+        self.dense = quantize_model(
+            vit_int_orig.dense,
+            specials=specials,
+            **quant_params,
+        )
+        
+        self.intermediate_act_fn = vit_int_orig.intermediate_act_fn
+    
+    def forward(self, hidden_states: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.intermediate_act_fn(hidden_states)
+
+        return self.quantize_activations(hidden_states)
+
+class QuantizedViTOutput(QuantizedActivation):
+    def __init__(self, vit_out_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {}
+        
+        self.dense = quantize_model(
+            vit_out_orig.dense,
+            specials=specials,
+            **quant_params,
+        )
+        
+        self.dropout = vit_out_orig.dropout
+    
+    def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.dropout(hidden_states)
+
+        hidden_states = hidden_states + input_tensor
+
+        return self.quantize_activations(hidden_states)   
+
+class QuantizedViTLayer(QuantizedActivation):
+    def __init__(self, vit_layer_orig, **quant_params):
+        super().__init__(**quant_params)
+        
+        specials = {ViTIntermediate: QuantizedViTImmediate, ViTOutput: QuantizedViTOutput}
+        
+        self.intermediate = quantize_model(
+            vit_layer_orig.intermediate,
+            specials=specials,
+            **quant_params,
+        )
+        self.output = quantize_model(
+            vit_layer_orig.output,
+            specials=specials,
+            **quant_params,
+        )
+        self.layernorm_before = quantize_model(vit_layer_orig.layernorm_before, **quant_params)
+        self.layernorm_after = quantize_model(vit_layer_orig.layernorm_after, **quant_params)
+        self.attention = vit_layer_orig.attention
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        head_mask: Optional[torch.Tensor] = None,
+        output_attentions: bool = False,
+    ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
+        
+        self_attention_outputs = self.attention(
+            self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
+            head_mask,
+            output_attentions=output_attentions,
+        )
+        
+        attention_output = self_attention_outputs[0]
+        # outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
+
+        # first residual connection
+        hidden_states = attention_output + hidden_states
+
+        # in ViT, layernorm is also applied after self-attention
+        layer_output = self.layernorm_after(hidden_states)
+        layer_output = self.intermediate(layer_output)
+
+        # second residual connection is done here
+        layer_output = self.output(layer_output, hidden_states)
+        
+
+        return self.quantize_activations(layer_output)
+
+class QuantizedViTEncoder(QuantizedActivation):
+    def __init__(self, vit_enc_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {ViTLayer: QuantizedViTLayer}
+        
+        self.layer = quantize_model(
+            vit_enc_orig.layer,
+            specials=specials,
+            **quant_params,
+        )
+        
+        self.gradient_checkpointing = vit_enc_orig.gradient_checkpointing
+        
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        # head_mask: Optional[torch.Tensor] = None,
+        # output_attentions: bool = False,
+        # output_hidden_states: bool = False,
+        return_dict: bool = True,
+    ) -> Union[tuple, BaseModelOutput]:
+        # all_hidden_states = () if output_hidden_states else None
+        # all_self_attentions = () if output_attentions else None
+
+        for i, layer_module in enumerate(self.layer):
+
+            layer_outputs = layer_module(hidden_states)
+
+            # hidden_states = layer_outputs[0]
+            hidden_states = layer_outputs
+
+
+        # if not return_dict:
+        #     return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
+        # return BaseModelOutput(
+        #     last_hidden_state=hidden_states,
+        # )
+        return self.quantize_activations(hidden_states)
+
+        
+class QuantizedViTPooler(QuantizedActivation):
+    def __init__(self, vit_pol_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {}
+        
+        self.dense = quantize_model(
+            vit_pol_orig.dense,
+            specials=specials,
+            **quant_params,
+        )
+        
+        
+    def forward(self, hidden_states):
+        # We "pool" the model by simply taking the hidden state corresponding
+        # to the first token.
+        first_token_tensor = hidden_states[:, 0]
+        pooled_output = self.dense(first_token_tensor)
+        pooled_output = self.activation(pooled_output)
+        return self.quantize_activations(pooled_output)
+
+class QuantizedViTModel(QuantizedActivation):
     def __init__(self, vit_mod_orig, **quant_params):
         super().__init__(**quant_params)
-        specials = {ViTEmbeddings, ViTEncoder, ViTPooler}
+        specials = {ViTEmbeddings: QuantizedVitEmbeddings, ViTEncoder: QuantizedViTEncoder}
+
+        self.embeddings = quantize_model(
+            vit_mod_orig.embeddings,
+            specials=specials, 
+            **quant_params,
+        )
+        self.encoder = quantize_model(
+            vit_mod_orig.encoder,
+            specials=specials,
+            **quant_params,
+        )
+        self.layernorm = quantize_model(vit_mod_orig.layernorm, **quant_params)
+        # if self.pooler is not None:
+        #     self.pooler = quantize_model(
+        #         vit_mod_orig.pooler,
+        #         specials=specials,
+        #         **quant_params,
+        #     ) 
+        # else:
+        #     self.pooler = None
+            
+    def forward(self, x):
+        embedding_output = self.embeddings(x)
+        encoder_outputs = self.encoder(embedding_output)
+        sequence_output = encoder_outputs
+        sequence_output = self.layernorm(sequence_output)
+        # pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
+        head_outputs = sequence_output
+        
+        return self.quantize_activations(head_outputs)
+        
 
 class QuantizedVisionTransformerForImageClassification(QuantizedModel):
     def __init__(self, model_fp, input_size=(1, 3, 224, 224), quant_setup=None, **quant_params):
@@ -67,19 +306,19 @@ class QuantizedVisionTransformerForImageClassification(QuantizedModel):
         specials = {ViTModel: QuantizedViTModel}
         # quantize and copy parts from original model
         quantize_input = quant_setup and quant_setup == "LSQ_paper"
-        self.vit = quantize_sequential(
+        self.vit = quantize_model(
             model_fp.vit, 
             tie_activation_quantizers=not quantize_input,
             specials=specials, 
             **quant_params,
-            )
+        )
         
         self.classifier = quantize_model(model_fp.classifier, **quant_params)
         
         
     def forward(self, x):
         outputs = self.vit(x)
-        sequence_output = outputs[0]
+        sequence_output = outputs
         logits = self.classifier(sequence_output[:, 0, :])
         
         return logits
@@ -87,5 +326,8 @@ class QuantizedVisionTransformerForImageClassification(QuantizedModel):
 
 def vit_quantized(pretrained=True, model_dir=None, load_type="fp32", **qparams):
     fp_model = VisionTransformerForImageClassification.from_pretrained('google/vit-base-patch16-224')
+    quant_model = QuantizedVisionTransformerForImageClassification(fp_model, **qparams)
+    # fp_model = timm.create_model('vit_base_patch16_224', pretrained=True)
+    # fp_model = vit_b_16(pretrained=True)
     # if pretrained and load_type == "fp32":
-    return fp_model
+    return quant_model

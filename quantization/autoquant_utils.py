@@ -371,11 +371,17 @@ def quantize_model(model, specials=None, tie_activation_quantizers=False, **quan
             quant_model.bias.data = model.bias.data
 
     else:
-        # Unknown type, try to quantize all child modules
+        # Unknown type or nn.ModuleList, try to quantize all child modules
         quant_model = copy.deepcopy(model)
-        for name, module in quant_model._modules.items():
-            new_model = quantize_model(module, specials=specials, **quant_params)
-            if new_model is not None:
-                setattr(quant_model, name, new_model)
+        if isinstance(quant_model, nn.ModuleList):
+            for index, module in enumerate(quant_model):
+                new_model = quantize_model(module, specials=specials, **quant_params)
+                if new_model is not None:
+                    quant_model[index] = new_model
+        else:
+            for name, module in quant_model._modules.items():
+                new_model = quantize_model(module, specials=specials, **quant_params)
+                if new_model is not None:
+                    setattr(quant_model, name, new_model)
 
     return quant_model
