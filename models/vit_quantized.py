@@ -155,14 +155,104 @@ class QuantizedViTOutput(QuantizedActivation):
 
         return self.quantize_activations(hidden_states)   
 
+
+class QuantizedViTSelfAttention(QuantizedActivation):
+    def __init__(self, vit_self_attn_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {}
+        
+        self.num_attention_heads = vit_self_attn_orig.num_attention_heads
+        self.attention_head_size = vit_self_attn_orig.attention_head_size
+        self.all_head_size = vit_self_attn_orig.all_head_size
+        
+        self.query = quantize_model(vit_self_attn_orig.query, **quant_params)
+        self.key = quantize_model(vit_self_attn_orig.key, **quant_params)
+        self.value = quantize_model(vit_self_attn_orig.value, **quant_params)
+        self.dropout = vit_self_attn_orig.dropout
+        
+        self.training = vit_self_attn_orig.training
+        self.attention_probs_dropout_prob = vit_self_attn_orig.attention_probs_dropout_prob
+
+    def transpose_for_scores(self, x: torch.Tensor) -> torch.Tensor:
+        new_x_shape = x.size()[:-1] + (self.num_attention_heads, self.attention_head_size)
+        x = x.view(new_x_shape)
+        return x.permute(0, 2, 1, 3)
+    
+    def forward(self, x):
+        mixed_query_layer = self.query(x)
+        
+        key_layer = self.transpose_for_scores(self.key(x))
+        value_layer = self.transpose_for_scores(self.value(x))
+        query_layer = self.transpose_for_scores(mixed_query_layer)
+        
+        context_layer = torch.nn.functional.scaled_dot_product_attention(
+            query=query_layer, 
+            key=key_layer,
+            value=value_layer,
+            attn_mask=None,
+            dropout_p=self.attention_probs_dropout_prob if self.training else 0.0,
+            is_causal=False,
+            scale=None,
+        )
+        
+        context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
+        new_context_layer_shape = context_layer.size()[:-2] + (self.all_head_size,)
+        context_layer = context_layer.view(new_context_layer_shape)
+        return self.quantize_activations(context_layer)
+            
+
+class QuantizedViTSelfOutput(QuantizedActivation):
+    def __init__(self, vit_self_out_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {}
+        
+        self.dense = quantize_model(
+            vit_self_out_orig.dense,
+            specials=specials,
+            **quant_params,
+        )
+        self.dropout = vit_self_out_orig.dropout
+        
+    def forward(self, x):
+        x = self.dense(x)
+        x = self.dropout(x)
+
+        return x
+
+class QuantizedViTSdpaAttention(QuantizedActivation):
+    def __init__(self, vit_sdpa_attn_orig, **quant_params):
+        super().__init__(**quant_params)
+        specials = {ViTSdpaSelfAttention: QuantizedViTSelfAttention, ViTSelfOutput: QuantizedViTSelfOutput}
+        
+        self.attention = quantize_model(
+            vit_sdpa_attn_orig.attention,
+            specials=specials,
+            **quant_params,
+        )
+        self.output = quantize_model(
+            vit_sdpa_attn_orig.output,
+            specials=specials,  
+            **quant_params,
+        )
+        # self.output = vit_sdpa_attn_orig.output
+        
+    def forward(self, x):
+        self_output = self.attention(x)
+        attention_output = self.output(self_output)
+        return attention_output
+
 class QuantizedViTLayer(QuantizedActivation):
     def __init__(self, vit_layer_orig, **quant_params):
         super().__init__(**quant_params)
-        
-        specials = {ViTIntermediate: QuantizedViTImmediate, ViTOutput: QuantizedViTOutput}
+        specials = {ViTIntermediate: QuantizedViTImmediate, ViTOutput: QuantizedViTOutput, ViTSdpaAttention: QuantizedViTSdpaAttention}
         
         self.intermediate = quantize_model(
             vit_layer_orig.intermediate,
+            specials=specials,
+            **quant_params,
+        )
+        self.attention = quantize_model(
+            vit_layer_orig.attention,
             specials=specials,
             **quant_params,
         )
@@ -173,7 +263,7 @@ class QuantizedViTLayer(QuantizedActivation):
         )
         self.layernorm_before = quantize_model(vit_layer_orig.layernorm_before, **quant_params)
         self.layernorm_after = quantize_model(vit_layer_orig.layernorm_after, **quant_params)
-        self.attention = vit_layer_orig.attention
+        # self.attention = vit_layer_orig.attention
 
     def forward(
         self,
@@ -182,27 +272,22 @@ class QuantizedViTLayer(QuantizedActivation):
         output_attentions: bool = False,
     ) -> Union[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor]]:
         
-        self_attention_outputs = self.attention(
+        attention_output = self.attention(
             self.layernorm_before(hidden_states),  # in ViT, layernorm is applied before self-attention
-            head_mask,
-            output_attentions=output_attentions,
         )
-        
-        attention_output = self_attention_outputs[0]
-        # outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
         # first residual connection
         hidden_states = attention_output + hidden_states
+        hidden_states = self.quantize_activations(hidden_states)
 
         # in ViT, layernorm is also applied after self-attention
         layer_output = self.layernorm_after(hidden_states)
         layer_output = self.intermediate(layer_output)
 
         # second residual connection is done here
-        layer_output = self.output(layer_output, hidden_states)
-        
+        layer_output = self.output(layer_output, hidden_states) # alread quantized in self.output
 
-        return self.quantize_activations(layer_output)
+        return layer_output
 
 class QuantizedViTEncoder(QuantizedActivation):
     def __init__(self, vit_enc_orig, **quant_params):
@@ -229,18 +314,8 @@ class QuantizedViTEncoder(QuantizedActivation):
         # all_self_attentions = () if output_attentions else None
 
         for i, layer_module in enumerate(self.layer):
+            hidden_states = layer_module(hidden_states)
 
-            layer_outputs = layer_module(hidden_states)
-
-            # hidden_states = layer_outputs[0]
-            hidden_states = layer_outputs
-
-
-        # if not return_dict:
-        #     return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
-        # return BaseModelOutput(
-        #     last_hidden_state=hidden_states,
-        # )
         return self.quantize_activations(hidden_states)
 
         
@@ -297,7 +372,8 @@ class QuantizedViTModel(QuantizedActivation):
         # pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
         head_outputs = sequence_output
         
-        return self.quantize_activations(head_outputs)
+        # return self.quantize_activations(head_outputs)
+        return head_outputs
         
 
 class QuantizedVisionTransformerForImageClassification(QuantizedModel):

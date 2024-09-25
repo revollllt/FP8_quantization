@@ -57,18 +57,22 @@ def validate_quantized(config, load_type):
 
     dataloaders, model = get_dataloaders_and_model(config=config, load_type=load_type, **qparams)
 
-    if load_type == "fp32":
-        # Estimate ranges using training data
-        pass_data_for_range_estimation(
-            loader=dataloaders.train_loader,
-            model=model,
-            act_quant=config.quant.act_quant,
-            weight_quant=config.quant.weight_quant,
-            max_num_batches=config.quant.num_est_batches,
-        )
-        # Ensure we have the desired quant state
-        model.set_quant_state(config.quant.weight_quant, config.quant.act_quant)
-        
+    # if load_type == "fp32":
+    #     # Estimate ranges using training data
+    #     pass_data_for_range_estimation(
+    #         loader=dataloaders.train_loader,
+    #         model=model,
+    #         act_quant=config.quant.act_quant,
+    #         weight_quant=config.quant.weight_quant,
+    #         max_num_batches=config.quant.num_est_batches,
+    #     )
+    #     # Ensure we have the desired quant state
+    #     model.set_quant_state(config.quant.weight_quant, config.quant.act_quant)
+
+
+    # # Fix ranges
+    # model.fix_ranges()
+
     # '''
     # test
     # '''
@@ -104,8 +108,6 @@ def validate_quantized(config, load_type):
     
     # return
 
-    # Fix ranges
-    model.fix_ranges()
 
     # Create evaluator
     loss_func = CrossEntropyLoss()
@@ -123,10 +125,10 @@ def validate_quantized(config, load_type):
     print("Model with the ranges estimated:\n{}".format(model))
 
     # BN Re-estimation
-    # if config.qat.reestimate_bn_stats:
-    #     ReestimateBNStats(
-    #         model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
-    #     )(None)
+    if config.qat.reestimate_bn_stats:
+        ReestimateBNStats(
+            model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
+        )(None)
 
     print("Start quantized validation")
     evaluator.run(dataloaders.val_loader)
