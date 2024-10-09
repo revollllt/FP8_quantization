@@ -29,6 +29,18 @@ def get_dataloaders_and_model(config, load_type="fp32", **qparams):
 
     return dataloaders, model
 
+def get_model(config, load_type="fp32", **qparams):
+    model = config.base.architecture(
+        pretrained=config.base.pretrained,
+        load_type=load_type,
+        model_dir=config.base.model_dir,
+        **qparams,
+    )
+    if config.base.cuda:
+        model = model.cuda()
+    
+    return model
+    
 
 class ReestimateBNStats:
     def __init__(self, model, data_loader, num_batches=50):

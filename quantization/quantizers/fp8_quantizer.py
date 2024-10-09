@@ -59,6 +59,9 @@ def decode_float8(S, E, F, bias=16):
     # All other bins         : 2^(exponent-bias) * {1.0 ... 1 + (2^mantissa-1)/2^mantissa}; exponent > 0
     A = int(exponent != 0)
     fraction = A + sum([2 ** -(i + 1) * int(a) for i, a in enumerate(F)])
+    # if exponent == 0:
+    #     print(f"s = {S}", f"e = {E}", f"f = {F}")
+    #     print(f"value = {sign * fraction * 2.0 ** (1-bias)}")
     exponent += int(exponent == 0)
     return sign * fraction * 2.0 ** (exponent - bias)
 
@@ -107,10 +110,18 @@ def quantize_to_fp8_ste_MM(
 
     if maxval.shape[0] != 1 and len(maxval.shape) != len(x_float.shape):
         maxval = maxval.view([-1] + [1] * (len(x_float.shape) - 1))
-    bias = 2**E - torch.log2(maxval) + torch.log2(2 - 2 ** (-M)) - 1
+    bias = 2**E - torch.log2(maxval) + torch.log2(2 - 2 ** (-M)) - 1  # get bias in maxval
 
     minval = -maxval if sign_bits == 1 else torch.zeros_like(maxval)
-    xc = torch.min(torch.max(x_float, minval), maxval)
+    # xc = torch.min(torch.max(x_float, minval), maxval)
+    
+    # clip subnormal values
+    subnormal_threshold = 2 ** (1 - bias)
+    xc = torch.where(x_float > 0, 
+                     torch.max(torch.min(x_float, maxval), subnormal_threshold),
+                     torch.where(x_float < 0,
+                                 torch.min(torch.max(x_float, -maxval), -subnormal_threshold),
+                                 x_float))
 
     """
     2 notes here:
@@ -126,10 +137,13 @@ def quantize_to_fp8_ste_MM(
 
     # log_scales = torch.max((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.)
     log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.0)
+    # print(torch.log2(torch.abs(xc)) )
+    # print(log_scales)
 
     scales = 2.0 ** (log_scales - M - bias)
+    # scales = 2.0 ** (log_scales - bias)
 
-    result = round_ste_func(xc / scales) * scales
+    result = round_ste_func(xc / scales) * scales 
     return result
 
 
@@ -171,7 +185,7 @@ class FPQuantizer(QuantizerBase):
         self.mantissa_bits = mantissa_bits
 
         self.ebits = self.n_bits - self.mantissa_bits - 1
-        self.default_bias = 2 ** (self.ebits - 1)
+        self.default_bias = 2 ** (self.ebits - 1)  ## float point in IEEE 754 format has bias of 2**(ebits-1)-1 for ensuring outilers all 0 exponent and all 1 exponent are represented correctly
 
         # assume signed, correct when range setting turns out to be unsigned
         default_maxval = (2 - 2 ** (-self.mantissa_bits)) * 2 ** (

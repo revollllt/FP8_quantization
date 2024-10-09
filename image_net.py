@@ -18,7 +18,7 @@ from utils.click_options import (
     quant_params_dict,
     base_options,
 )
-from utils.qat_utils import get_dataloaders_and_model, ReestimateBNStats
+from utils.qat_utils import get_dataloaders_and_model, ReestimateBNStats, get_model
 
 import torch
 import matplotlib.pyplot as plt
@@ -57,21 +57,21 @@ def validate_quantized(config, load_type):
 
     dataloaders, model = get_dataloaders_and_model(config=config, load_type=load_type, **qparams)
 
-    # if load_type == "fp32":
-    #     # Estimate ranges using training data
-    #     pass_data_for_range_estimation(
-    #         loader=dataloaders.train_loader,
-    #         model=model,
-    #         act_quant=config.quant.act_quant,
-    #         weight_quant=config.quant.weight_quant,
-    #         max_num_batches=config.quant.num_est_batches,
-    #     )
-    #     # Ensure we have the desired quant state
-    #     model.set_quant_state(config.quant.weight_quant, config.quant.act_quant)
+    if load_type == "fp32":
+        # Estimate ranges using training data
+        pass_data_for_range_estimation(
+            loader=dataloaders.train_loader,
+            model=model,
+            act_quant=config.quant.act_quant,
+            weight_quant=config.quant.weight_quant,
+            max_num_batches=config.quant.num_est_batches,
+        )
+        # Ensure we have the desired quant state
+        model.set_quant_state(config.quant.weight_quant, config.quant.act_quant)
 
 
-    # # Fix ranges
-    # model.fix_ranges()
+    # Fix ranges
+    model.fix_ranges()
 
     # '''
     # test
@@ -135,6 +135,27 @@ def validate_quantized(config, load_type):
     final_metrics = evaluator.state.metrics
     print(final_metrics)
 
+
+@fp8_cmd_group.command()
+@pass_config
+@base_options
+@fp8_options
+@quantization_options
+@qat_options
+@click.option(
+    "--load-type",
+    type=click.Choice(["fp32", "quantized"]),
+    default="quantized",
+    help='Either "fp32", or "quantized". Specify weather to load a quantized or a FP ' "model.",
+)
+def validate_quantized_demo(config, load_type):
+    """
+    function for demo test fp8 quantization
+    """
+    model = get_model(config, load_type)
+    input_tensor = torch.rand(10, 10)
+    print(input_tensor)
+    pass
 
 if __name__ == "__main__":
     fp8_cmd_group()

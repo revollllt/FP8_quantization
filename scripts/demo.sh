@@ -5,14 +5,14 @@ seed=10
 image_dir="/home/zou/data/ImageNet"
 model_dir="/home/zou/codes/FP8-quantization/model_dir/mobilenet_v2.pth.tar"
 
-architecture="mobilenet_v2_quantized"
+architecture="demo_quantized"
 
 batch_size=64
 
 n_bits=8
 
 
-python image_net.py validate-quantized \
+python image_net.py validate-quantized-demo \
     --images-dir ${image_dir} \
     --architecture ${architecture} \
     --batch-size ${batch_size} \
@@ -24,7 +24,7 @@ python image_net.py validate-quantized \
     --quant-setup all \
     --qmethod fp_quantizer \
     --per-channel \
-    --fp8-mantissa-bits=4 \
+    --fp8-mantissa-bits=5 \
     --fp8-set-maxval \
     --no-fp8-mse-include-mantissa-bits \
     --weight-quant-method=current_minmax \
