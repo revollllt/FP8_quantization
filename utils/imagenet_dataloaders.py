@@ -64,7 +64,7 @@ class ImageNetDataLoaders(object):
         # For normalization, mean and std dev values are calculated per channel
         # and can be found on the web.
         normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        # normalize = transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
 
         self.train_transforms = transforms.Compose(
             [
