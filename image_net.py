@@ -124,6 +124,12 @@ def validate_quantized(config, load_type):
     pbar.attach(evaluator)
     print("Model with the ranges estimated:\n{}".format(model))
 
+    from approx.replace_operations_in_mobilenet_v2 import replace_operations_in_mobilenet_v2_quantized
+    replace_operations_in_mobilenet_v2_quantized(model)
+    if config.base.cuda:
+        model = model.cuda()
+    print("replace done")
+    
     # BN Re-estimation
     if config.qat.reestimate_bn_stats:
         ReestimateBNStats(
@@ -131,9 +137,7 @@ def validate_quantized(config, load_type):
         )(None)
 
     print("Start quantized validation")
-    from approx.replace_operations_in_mobilenet_v2 import replace_operations_in_mobilenet_v2_quantized
-    replace_operations_in_mobilenet_v2_quantized(model)
-    print("replace done")
+
     evaluator.run(dataloaders.val_loader)
     final_metrics = evaluator.state.metrics
     print(final_metrics)

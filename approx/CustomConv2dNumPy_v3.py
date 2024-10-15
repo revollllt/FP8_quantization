@@ -126,7 +126,8 @@ class CustomConv2dCuPy_v3(nn.Conv2d):
 
 
     def multiply(self, x, y):
-        return cp.multiply(x, y)
+        # return cp.multiply(x, y)
+        return cp.matmul(x, y)
 
     def forward(self, input):
         # 确保输入是连续的
@@ -169,7 +170,8 @@ class CustomConv2dCuPy_v3(nn.Conv2d):
             weight_group = weight_col[start_out:end_out, :]  # Shape: (group_out_channels, in_channels_per_group * kernel_height * kernel_width)
             
             # Perform matrix multiplication
-            output_group = self.multiply(input_group[:, :, cp.newaxis], weight_group.T[cp.newaxis, :, :]).sum(axis=1)
+            # output_group = self.multiply(input_group[:, :, np.newaxis], weight_group.T[np.newaxis, :, :]).sum(axis=1)
+            output_group = self.multiply(input_group, weight_group.T)
             
             # Store the output
             output[:, start_out:end_out] = output_group
@@ -248,7 +250,8 @@ class QCustomConv2dNumPy(nn.Conv2d):
         return col
     
     def multiply(self, x, y):
-        return np.multiply(x, y)
+        # return np.multiply(x, y)
+        return np.matmul(x, y)
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()
@@ -289,8 +292,9 @@ class QCustomConv2dNumPy(nn.Conv2d):
             weight_group = weight_col[start_out:end_out, :]  # Shape: (group_out_channels, in_channels_per_group * kernel_height * kernel_width)
             
             # Perform matrix multiplication
-            output_group = self.multiply(input_group[:, :, np.newaxis], weight_group.T[np.newaxis, :, :]).sum(axis=1)
-            
+            # output_group = self.multiply(input_group[:, :, np.newaxis], weight_group.T[np.newaxis, :, :]).sum(axis=1)
+            output_group = self.multiply(input_group, weight_group.T)
+
             # Store the output
             output[:, start_out:end_out] = output_group
         
@@ -309,6 +313,35 @@ class QCustomConv2dNumPy(nn.Conv2d):
     def forward(self, input):
         return self.run_forward(input, self.weight, self.bias)
 
+class QCustomConv2dNumPy_approx(QCustomConv2dNumPy):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super(QCustomConv2dNumPy_approx, self).__init__(
+            in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        
+        self.use_bias = bias is not None
+    
+    def multiply(self, x, y):
+        expo_width = 2
+        mant_width = 5
+        withComp = True
+        
+        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp)
+        custom_result_vectorize = custom_matmul_vectorize(
+            x, y, 
+            expo_width, 
+            mant_width, 
+            comp_table_NN   = comp_table_NN, 
+            sim_hw_add_OFUF = False, 
+            with_OF_opt     = False, 
+            with_UF_opt     = False, 
+            debug_mode      = False
+            # debug_mode      = True 
+        )
+        return custom_result_vectorize
+    
+    def forward(self, input):
+        return self.run_forward(input, self.weight, self.bias)
+
 
 def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width, out_channels, kernel_size, stride, padding, dilation, groups):
     
@@ -318,7 +351,7 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
     custom_conv = QCustomConv2dNumPy(in_channels, out_channels, kernel_size, stride, padding, dilation, groups)
     
     cupy_conv = CustomConv2dCuPy_v3(in_channels, out_channels, kernel_size, stride, padding, dilation, groups)
-    
+    approx_conv = QCustomConv2dNumPy_approx(in_channels, out_channels, kernel_size, stride, padding, dilation, groups)
     
     
     # Ensure both layers have the same weights and biases
@@ -327,9 +360,12 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
         custom_conv.bias.copy_(standard_conv.bias)
         cupy_conv.weight.copy_(standard_conv.weight)
         cupy_conv.bias.copy_(standard_conv.bias)
+        approx_conv.weight.copy_(standard_conv.weight)
+        approx_conv.bias.copy_(standard_conv.bias)
 
     # Create random input tensor
-    input_tensor = torch.randn(batch_size, in_channels, in_height, in_width)
+    # input_tensor = torch.randn(batch_size, in_channels, in_height, in_width)
+    input_tensor = generate_input_tensor(batch_size, in_channels, in_height, in_width)
 
     # Forward pass through both layers
     warmup_epoch = 10
@@ -347,6 +383,12 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
         custom_end_time = time.time()
         custom_time = (custom_end_time - custom_start_time) / test_epoch
         
+        approx_start_time = time.time()
+        for _ in range(test_epoch):
+            approx_output = approx_conv(input_tensor)
+        approx_end_time = time.time()
+        approx_time = (approx_end_time - approx_start_time) / test_epoch
+        
         # warmup
         for _ in range(warmup_epoch):
             _ = cupy_conv(input_tensor)
@@ -361,6 +403,11 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
     max_diff_np = torch.max(abs_diff_np).item()
     mean_diff_np = torch.mean(abs_diff_np).item()
     relative_diff_np = torch.mean(abs_diff_np / (torch.abs(standard_output) + 1e-8)).item()
+    
+    abs_diff_approx = torch.abs(approx_output - standard_output)
+    max_diff_approx = torch.max(abs_diff_approx).item()
+    mean_diff_approx = torch.mean(abs_diff_approx).item()
+    relative_diff_approx = torch.mean(abs_diff_approx / (torch.abs(standard_output) + 1e-8)).item()
 
     abs_diff_cp = torch.abs(cupy_output - standard_output)
     max_diff_cp = torch.max(abs_diff_cp).item()
@@ -372,15 +419,31 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
     # relative_diff_cp = 0
 
     # print(f'Abs diff: {abs_diff_np}, {abs_diff_cp}')
-    print(f"Max absolute difference: {max_diff_np}, {max_diff_cp}")
-    print(f"Mean absolute difference: {mean_diff_np}, {mean_diff_cp}")
-    print(f"Mean relative difference: {relative_diff_np}, {relative_diff_cp}")
+    print(f"Max absolute difference: numpy: {max_diff_np}, cupy: {max_diff_cp}, approx: {max_diff_approx}")
+    print(f"Mean absolute difference: numpy: {mean_diff_np}, cupy: {mean_diff_cp}, approx: {mean_diff_approx}")
+    print(f"Mean relative difference: numpy: {relative_diff_np}, cupy: {relative_diff_cp}, approx: {relative_diff_approx}")
     print(f"Standard time: {standard_time}")
     print(f"Custom time: {custom_time}")
     print(f"CuPy time: {cupy_time}")
+    print(f"Approx time: {approx_time}")
     # cupy_time = 0
     return max_diff_np, max_diff_cp, mean_diff_np, mean_diff_cp, relative_diff_np, relative_diff_cp, standard_time, custom_time, cupy_time
 
+
+def generate_input_tensor(batch_size, in_channels, in_height, in_width):
+    expo_width = 2
+    mant_width = 5
+
+
+    fp_bias  = (2**(expo_width - 1)) - 1
+    max_norm = (2**fp_bias) * (2 - 2**(-mant_width))
+    min_norm = 2**(1 - fp_bias)
+    shape = (batch_size, in_channels, in_height, in_width)
+    
+    abs_max = max_norm / 100     # No OF, No UF
+    # abs_max = max_norm
+    abs_min = min_norm
+    return torch.from_numpy(random_numpy_matrix(shape, abs_min, abs_max)).to(torch.float32)
 
 
 
@@ -391,8 +454,8 @@ if __name__ == "__main__":
     # Test with different configurations
     configurations = [
         {'batch_size': 1, 'in_channels': 3, 'in_height': 32, 'in_width': 32, 'out_channels': 15, 'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1},
-        {'batch_size': 4, 'in_channels': 64, 'in_height': 64, 'in_width': 64, 'out_channels': 128, 'kernel_size': 5, 'stride': 2, 'padding': 2, 'dilation': 1, 'groups': 1},
-        {'batch_size': 4, 'in_channels': 3, 'in_height': 224, 'in_width': 224, 'out_channels': 16, 'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1},    # Don't care about dilation
+        # {'batch_size': 4, 'in_channels': 64, 'in_height': 64, 'in_width': 64, 'out_channels': 128, 'kernel_size': 5, 'stride': 2, 'padding': 2, 'dilation': 1, 'groups': 1},
+        # {'batch_size': 4, 'in_channels': 3, 'in_height': 224, 'in_width': 224, 'out_channels': 16, 'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1},    # Don't care about dilation
     ]
 
     for i, config in enumerate(configurations):

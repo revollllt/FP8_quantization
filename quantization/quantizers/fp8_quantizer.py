@@ -59,9 +59,9 @@ def decode_float8(S, E, F, bias=16):
     # All other bins         : 2^(exponent-bias) * {1.0 ... 1 + (2^mantissa-1)/2^mantissa}; exponent > 0
     A = int(exponent != 0)
     fraction = A + sum([2 ** -(i + 1) * int(a) for i, a in enumerate(F)])
-    # if exponent == 0:
-    #     print(f"s = {S}", f"e = {E}", f"f = {F}")
-    #     print(f"value = {sign * fraction * 2.0 ** (1-bias)}")
+    if exponent == 0:
+        print(f"s = {S}", f"e = {E}", f"f = {F}")
+        print(f"value = {sign * fraction * 2.0 ** (1-bias)}")
     exponent += int(exponent == 0)
     return sign * fraction * 2.0 ** (exponent - bias)
 

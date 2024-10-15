@@ -4,9 +4,9 @@ from quantization.quantizers.fp8_quantizer import *
 
 
 n_bits = 8
-expo_bits = 4
+expo_bits = 2
 mant_bits = n_bits - expo_bits - 1
-bias = 2**(expo_bits-1) - 1
+bias = 2**(expo_bits-1)
 
 all_values = gen(n_bits, expo_bits, bias)
 maxval = get_max_value(expo_bits, bias)
