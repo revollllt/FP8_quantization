@@ -5,7 +5,7 @@ import os
 
 import click
 from ignite.contrib.handlers import ProgressBar
-from ignite.engine import create_supervised_evaluator
+from ignite.engine import create_supervised_evaluator, Events
 from ignite.metrics import Accuracy, TopKCategoricalAccuracy, Loss
 from torch.nn import CrossEntropyLoss
 
@@ -56,6 +56,12 @@ def validate_quantized(config, load_type):
     qparams = quant_params_dict(config)
 
     dataloaders, model = get_dataloaders_and_model(config=config, load_type=load_type, **qparams)
+    
+    # from approx.replace_operations_in_mobilenet_v2 import replace_operations_in_mobilenet_v2_quantized
+    # replace_operations_in_mobilenet_v2_quantized(model, **qparams)
+    # if config.base.cuda:
+    #     model = model.cuda()
+    # print("replace done")
 
     if load_type == "fp32":
         # Estimate ranges using training data
@@ -124,17 +130,12 @@ def validate_quantized(config, load_type):
     pbar.attach(evaluator)
     print("Model with the ranges estimated:\n{}".format(model))
 
-    from approx.replace_operations_in_mobilenet_v2 import replace_operations_in_mobilenet_v2_quantized
-    replace_operations_in_mobilenet_v2_quantized(model)
-    if config.base.cuda:
-        model = model.cuda()
-    print("replace done")
     
-    # BN Re-estimation
-    if config.qat.reestimate_bn_stats:
-        ReestimateBNStats(
-            model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
-        )(None)
+    # # BN Re-estimation
+    # if config.qat.reestimate_bn_stats:
+    #     ReestimateBNStats(
+    #         model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
+    #     )(None)
 
     print("Start quantized validation")
 

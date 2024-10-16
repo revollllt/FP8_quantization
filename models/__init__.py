@@ -8,6 +8,7 @@ from models.vit_quantized import vit_quantized
 from models.demo_quantized import demo_quantized
 from utils import ClassEnumOptions, MethodMap
 
+from models.mobilenet_v2_quantized_approx import mobilenetv2_quantized_approx
 
 class QuantArchitectures(ClassEnumOptions):
     mobilenet_v2_quantized = MethodMap(mobilenetv2_quantized)
@@ -15,3 +16,8 @@ class QuantArchitectures(ClassEnumOptions):
     resnet50_quantized = MethodMap(resnet50_quantized)
     vit_quantized = MethodMap(vit_quantized)
     demo_quantized = MethodMap(demo_quantized)
+    
+    '''
+    approx architecture
+    '''
+    mobilenet_v2_quantized_approx = MethodMap(mobilenetv2_quantized_approx)

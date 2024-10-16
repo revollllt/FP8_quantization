@@ -341,6 +341,81 @@ class QCustomConv2dNumPy_approx(QCustomConv2dNumPy):
     
     def forward(self, input):
         return self.run_forward(input, self.weight, self.bias)
+    
+
+class QCustomConv2dTorch(nn.Conv2d):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
+        super(QCustomConv2dTorch, self).__init__(
+            in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        
+        self.use_bias = bias is not None
+        
+    def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
+        # 使用 F.unfold 实现 im2col
+        # 输入形状: (batch_size, channels, height, width)
+        # unfold 后的形状: (batch_size, channels * kernel_height * kernel_width, L)
+        # 其中 L = 输出的高度 * 输出的宽度
+        input_unfold = F.unfold(input_data, 
+                                kernel_size=(kernel_height, kernel_width),
+                                dilation=dilation,
+                                padding=padding,
+                                stride=stride)
+        return input_unfold  # 形状: (batch_size, channels * kernel_height * kernel_width, L)
+    
+    
+    def multiply(self, x, y):
+        return torch.matmul(x, y)
+    
+    def run_forward(self, x, weight, bias, offsets=None):
+        batch_size, in_channels, in_height, in_width = x.shape
+        out_channels, _, kernel_height, kernel_width = weight.shape
+        
+        # 计算输出尺寸
+        out_height = (in_height + 2 * self.padding[0] - self.dilation[0] * (kernel_height - 1) - 1) // self.stride[0] + 1
+        out_width = (in_width + 2 * self.padding[1] - self.dilation[1] * (kernel_width - 1) - 1) // self.stride[1] + 1
+        
+        # 展开输入张量
+        input_unfold = self.im2col(x, kernel_height, kernel_width, self.stride, self.padding, self.dilation)
+        # 形状: (batch_size, in_channels * kernel_height * kernel_width, out_height * out_width)
+        
+        # 处理分组卷积
+        groups = self.groups
+        group_in_channels = in_channels // groups
+        group_out_channels = out_channels // groups
+        
+        # 重塑输入张量以适应分组
+        input_unfold = input_unfold.view(batch_size, groups, group_in_channels * kernel_height * kernel_width, -1)
+        # 形状: (batch_size, groups, group_in_channels * kernel_height * kernel_width, out_height * out_width)
+        
+        # 重塑权重张量
+        weight = weight.view(groups, group_out_channels, group_in_channels * kernel_height * kernel_width)
+        # 形状: (groups, group_out_channels, group_in_channels * kernel_height * kernel_width)
+        
+        # 执行批量矩阵乘法
+        # 首先交换 input_unfold 的最后两个维度以匹配矩阵乘法要求
+        input_unfold = input_unfold.permute(0, 1, 3, 2)
+        # 形状: (batch_size, groups, out_height * out_width, group_in_channels * kernel_height * kernel_width)
+        
+        # 进行矩阵乘法
+        # output = torch.matmul(input_unfold, weight.transpose(2, 1))
+        output = self.multiply(input_unfold, weight.transpose(2, 1))
+        # 形状: (batch_size, groups, out_height * out_width, group_out_channels)
+        
+        # 调整输出形状
+        output = output.permute(0, 1, 3, 2).contiguous()
+        # 形状: (batch_size, groups, group_out_channels, out_height * out_width)
+        
+        output = output.view(batch_size, out_channels, out_height, out_width)
+        # 形状: (batch_size, out_channels, out_height, out_width)
+        
+        # 添加偏置（如果有）
+        if bias is not None:
+            output += bias.view(1, -1, 1, 1)
+        
+        return output
+    
+    def forward(self, input):
+        return self.run_forward(input, self.weight, self.bias)
 
 
 def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width, out_channels, kernel_size, stride, padding, dilation, groups):
@@ -353,6 +428,7 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
     cupy_conv = CustomConv2dCuPy_v3(in_channels, out_channels, kernel_size, stride, padding, dilation, groups)
     approx_conv = QCustomConv2dNumPy_approx(in_channels, out_channels, kernel_size, stride, padding, dilation, groups)
     
+    torch_conv = QCustomConv2dTorch(in_channels, out_channels, kernel_size, stride, padding, dilation, groups)
     
     # Ensure both layers have the same weights and biases
     with torch.no_grad():
@@ -362,6 +438,8 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
         cupy_conv.bias.copy_(standard_conv.bias)
         approx_conv.weight.copy_(standard_conv.weight)
         approx_conv.bias.copy_(standard_conv.bias)
+        torch_conv.weight.copy_(standard_conv.weight)
+        torch_conv.bias.copy_(standard_conv.bias)
 
     # Create random input tensor
     # input_tensor = torch.randn(batch_size, in_channels, in_height, in_width)
@@ -389,6 +467,12 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
         approx_end_time = time.time()
         approx_time = (approx_end_time - approx_start_time) / test_epoch
         
+        torch_start_time = time.time()
+        for _ in range(test_epoch):
+            torch_output = torch_conv(input_tensor)
+        torch_end_time = time.time()
+        torch_time = (torch_end_time - torch_start_time) / test_epoch
+        
         # warmup
         for _ in range(warmup_epoch):
             _ = cupy_conv(input_tensor)
@@ -413,19 +497,29 @@ def compare_conv2d_implementations(batch_size, in_channels, in_height, in_width,
     max_diff_cp = torch.max(abs_diff_cp).item()
     mean_diff_cp = torch.mean(abs_diff_cp).item()
     relative_diff_cp = torch.mean(abs_diff_cp / (torch.abs(standard_output) + 1e-8)).item()
+    
+    print(f"torch_output: {torch_output}")
+    print(f"standard_output: {standard_output}")
+    abs_diff_torch = torch.abs(torch_output - standard_output)
+    max_diff_torch = torch.max(abs_diff_torch).item()
+    mean_diff_torch = torch.mean(abs_diff_torch).item()
+    relative_diff_torch = torch.mean(abs_diff_torch / (torch.abs(standard_output) + 1e-8)).item()
+    # are_close = torch.allclose(torch_output, standard_output, rtol=1e-5, atol=1e-8)
+    # print(f"Are the outputs close? {are_close}")
     # abs_diff_cp = 0
     # max_diff_cp = 0
     # mean_diff_cp = 0
     # relative_diff_cp = 0
 
     # print(f'Abs diff: {abs_diff_np}, {abs_diff_cp}')
-    print(f"Max absolute difference: numpy: {max_diff_np}, cupy: {max_diff_cp}, approx: {max_diff_approx}")
-    print(f"Mean absolute difference: numpy: {mean_diff_np}, cupy: {mean_diff_cp}, approx: {mean_diff_approx}")
-    print(f"Mean relative difference: numpy: {relative_diff_np}, cupy: {relative_diff_cp}, approx: {relative_diff_approx}")
+    print(f"Max absolute difference: numpy: {max_diff_np}, cupy: {max_diff_cp}, approx: {max_diff_approx}, torch: {max_diff_torch}")
+    print(f"Mean absolute difference: numpy: {mean_diff_np}, cupy: {mean_diff_cp}, approx: {mean_diff_approx}, torch: {mean_diff_torch}")
+    print(f"Mean relative difference: numpy: {relative_diff_np}, cupy: {relative_diff_cp}, approx: {relative_diff_approx}, torch: {relative_diff_torch}")
     print(f"Standard time: {standard_time}")
     print(f"Custom time: {custom_time}")
     print(f"CuPy time: {cupy_time}")
     print(f"Approx time: {approx_time}")
+    print(f"Torch time: {torch_time}")
     # cupy_time = 0
     return max_diff_np, max_diff_cp, mean_diff_np, mean_diff_cp, relative_diff_np, relative_diff_cp, standard_time, custom_time, cupy_time
 
@@ -453,7 +547,7 @@ if __name__ == "__main__":
 
     # Test with different configurations
     configurations = [
-        {'batch_size': 1, 'in_channels': 3, 'in_height': 32, 'in_width': 32, 'out_channels': 15, 'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1},
+        {'batch_size': 1, 'in_channels': 3, 'in_height': 32, 'in_width': 32, 'out_channels': 15, 'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 3},
         # {'batch_size': 4, 'in_channels': 64, 'in_height': 64, 'in_width': 64, 'out_channels': 128, 'kernel_size': 5, 'stride': 2, 'padding': 2, 'dilation': 1, 'groups': 1},
         # {'batch_size': 4, 'in_channels': 3, 'in_height': 224, 'in_width': 224, 'out_channels': 16, 'kernel_size': 3, 'stride': 1, 'padding': 1, 'dilation': 1, 'groups': 1},    # Don't care about dilation
     ]

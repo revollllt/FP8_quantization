@@ -11,6 +11,10 @@ from quantization.hijacker import QuantizationHijacker, activations_set
 from quantization.quantization_manager import QuantizationManager
 from quantization.quantized_folded_bn import BNFusedHijacker
 
+from approx.approx_matmul_whole_v3 import *
+
+import time
+
 class CustomConv2dNumPy(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
         super(CustomConv2dNumPy, self).__init__(
@@ -510,3 +514,322 @@ class QCustomLinearCuPy(QuantizationHijacker, nn.Linear):
         return torch.as_tensor(output, device=x.device, dtype=x.dtype)
         # return torch.from_dlpack(output)
 
+
+'''
+CustomConv2dTorch with Quantization
+'''
+
+class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
+    def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
+        batch_size, channels, height, width = input_data.shape
+        
+        # 计算输出尺寸
+        out_height = (height + 2 * padding[0] - dilation[0] * (kernel_height - 1) - 1) // stride[0] + 1
+        out_width = (width + 2 * padding[1] - dilation[1] * (kernel_width - 1) - 1) // stride[1] + 1
+        
+        # 填充输入
+        padded_input = F.pad(input_data, (padding[1], padding[1], padding[0], padding[0]), mode='constant')
+        
+        # 初始化输出张量
+        col = torch.zeros((batch_size, channels, kernel_height, kernel_width, out_height, out_width), device=input_data.device)
+        
+        # 填充输出张量
+        for y in range(kernel_height):
+            y_max = y * dilation[0] + out_height * stride[0]
+            for x in range(kernel_width):
+                x_max = x * dilation[1] + out_width * stride[1]
+                col[:, :, y, x, :, :] = padded_input[:, :, y*dilation[0]:y_max:stride[0], x*dilation[1]:x_max:stride[1]]
+        
+        # 重塑张量以匹配矩阵乘法的要求
+        col = col.permute(0, 4, 5, 1, 2, 3).reshape(batch_size * out_height * out_width, -1)
+        
+        return col
+    # def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
+    #     # 使用 F.unfold 实现 im2col
+    #     # 输入形状: (batch_size, channels, height, width)
+    #     # unfold 后的形状: (batch_size, channels * kernel_height * kernel_width, L)
+    #     # 其中 L = 输出的高度 * 输出的宽度
+    #     input_unfold = F.unfold(input_data, 
+    #                             kernel_size=(kernel_height, kernel_width),
+    #                             dilation=dilation,
+    #                             padding=padding,
+    #                             stride=stride)
+    #     return input_unfold  # 形状: (batch_size, channels * kernel_height * kernel_width, L)
+    
+    def multiply(self, x, y):
+        # return np.multiply(x, y)
+        # return torch.matmul(x, y)
+        expo_width = 3
+        mant_width = 4
+        dnsmp_factor = 3
+        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        sim_hw_add_OFUF = False
+        with_OF_opt = False
+        with_UF_opt = False
+        debug_mode = False
+
+        output = custom_matmul_vectorize(x, y, 
+                                       expo_width, 
+                                       mant_width, 
+                                       comp_table_NN   = comp_table_NN, 
+                                       sim_hw_add_OFUF = sim_hw_add_OFUF, 
+                                       with_OF_opt     = with_OF_opt, 
+                                       with_UF_opt     = with_UF_opt, 
+                                       debug_mode      = debug_mode)
+    
+        return output
+    
+    def run_forward(self, x, weight, bias, offsets=None):
+        x = x.contiguous()  # 确保输入张量是连续的
+        # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
+        input_torch = x.detach()   
+        weight_torch = weight.detach()
+
+        batch_size, in_channels, in_height, in_width = input_torch.shape
+        out_channels, in_channels_per_group, kernel_height, kernel_width = weight_torch.shape
+        
+        # 计算输出的尺寸
+        out_height = (in_height + 2 * self.padding[0] - self.dilation[0] * (kernel_height - 1) - 1) // self.stride[0] + 1
+        out_width = (in_width + 2 * self.padding[1] - self.dilation[1] * (kernel_width - 1) - 1) // self.stride[1] + 1
+        
+        # 使用 im2col 重塑输入
+        input_col = self.im2col(input_torch, kernel_height, kernel_width, self.stride, self.padding, self.dilation)
+        # input_col 形状: (batch_size * out_height * out_width, in_channels * kernel_height * kernel_width)
+        
+        # 处理分组卷积
+        group_in_channels = in_channels // self.groups
+        group_out_channels = out_channels // self.groups
+        
+        # 重塑权重
+        weight_col = weight_torch.reshape(out_channels, -1)  # 形状: (out_channels, in_channels_per_group * kernel_height * kernel_width)
+        
+        # 初始化输出张量
+        output = torch.zeros((batch_size * out_height * out_width, out_channels), device=x.device, dtype=x.dtype)
+        
+        for g in range(self.groups):
+            # 输入的索引
+            start_in = g * group_in_channels * kernel_height * kernel_width
+            end_in = (g + 1) * group_in_channels * kernel_height * kernel_width
+            input_group = input_col[:, start_in:end_in]
+            
+            # 输出通道的索引
+            start_out = g * group_out_channels
+            end_out = (g + 1) * group_out_channels
+            weight_group = weight_col[start_out:end_out, :]  # 形状: (group_out_channels, in_channels_per_group * kernel_height * kernel_width)
+            
+            # 执行矩阵乘法
+            output_group = self.multiply(input_group, weight_group.T)
+            
+            # 存储输出
+            output[:, start_out:end_out] = output_group
+        
+        # 重塑输出
+        output = output.reshape(batch_size, out_height, out_width, out_channels)
+        output = output.permute(0, 3, 1, 2)  # 形状: (batch_size, out_channels, out_height, out_width)
+        
+        # 如果有 bias，添加 bias
+        if bias is not None:
+            output += bias.view(1, -1, 1, 1)
+        
+        # 返回 PyTorch 张量
+        return output
+    # def run_forward(self, x, weight, bias, offsets=None):
+    #     batch_size, in_channels, in_height, in_width = x.shape
+    #     out_channels, _, kernel_height, kernel_width = weight.shape
+        
+    #     # 计算输出尺寸
+    #     out_height = (in_height + 2 * self.padding[0] - self.dilation[0] * (kernel_height - 1) - 1) // self.stride[0] + 1
+    #     out_width = (in_width + 2 * self.padding[1] - self.dilation[1] * (kernel_width - 1) - 1) // self.stride[1] + 1
+        
+    #     # 展开输入张量
+    #     input_unfold = self.im2col(x, kernel_height, kernel_width, self.stride, self.padding, self.dilation)
+    #     # 形状: (batch_size, in_channels * kernel_height * kernel_width, out_height * out_width)
+        
+    #     # 处理分组卷积
+    #     groups = self.groups
+    #     group_in_channels = in_channels // groups
+    #     group_out_channels = out_channels // groups
+        
+    #     # 重塑输入张量以适应分组
+    #     input_unfold = input_unfold.view(batch_size, groups, group_in_channels * kernel_height * kernel_width, -1)
+    #     # 形状: (batch_size, groups, group_in_channels * kernel_height * kernel_width, out_height * out_width)
+        
+    #     # 重塑权重张量
+    #     weight = weight.view(groups, group_out_channels, group_in_channels * kernel_height * kernel_width)
+    #     # 形状: (groups, group_out_channels, group_in_channels * kernel_height * kernel_width)
+        
+    #     # 执行批量矩阵乘法
+    #     # 首先交换 input_unfold 的最后两个维度以匹配矩阵乘法要求
+    #     input_unfold = input_unfold.permute(0, 1, 3, 2)
+    #     # 形状: (batch_size, groups, out_height * out_width, group_in_channels * kernel_height * kernel_width)
+        
+    #     # 进行矩阵乘法
+    #     # output = torch.matmul(input_unfold, weight.transpose(2, 1))
+    #     output = self.multiply(input_unfold, weight.transpose(2, 1))
+    #     # 形状: (batch_size, groups, out_height * out_width, group_out_channels)
+        
+    #     # 调整输出形状
+    #     output = output.permute(0, 1, 3, 2).contiguous()
+    #     # 形状: (batch_size, groups, group_out_channels, out_height * out_width)
+        
+    #     output = output.view(batch_size, out_channels, out_height, out_width)
+    #     # 形状: (batch_size, out_channels, out_height, out_width)
+        
+    #     # 添加偏置（如果有）
+    #     if bias is not None:
+    #         output += bias.view(1, -1, 1, 1)
+        
+    #     return output
+
+
+class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
+    def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
+        batch_size, channels, height, width = input_data.shape
+        
+        # 计算输出尺寸
+        out_height = (height + 2 * padding[0] - dilation[0] * (kernel_height - 1) - 1) // stride[0] + 1
+        out_width = (width + 2 * padding[1] - dilation[1] * (kernel_width - 1) - 1) // stride[1] + 1
+        
+        # 填充输入
+        padded_input = F.pad(input_data, (padding[1], padding[1], padding[0], padding[0]), mode='constant')
+        
+        # 初始化输出张量
+        col = torch.zeros((batch_size, channels, kernel_height, kernel_width, out_height, out_width), device=input_data.device)
+        
+        # 填充输出张量
+        for y in range(kernel_height):
+            y_max = y * dilation[0] + out_height * stride[0]
+            for x in range(kernel_width):
+                x_max = x * dilation[1] + out_width * stride[1]
+                col[:, :, y, x, :, :] = padded_input[:, :, y*dilation[0]:y_max:stride[0], x*dilation[1]:x_max:stride[1]]
+        
+        # 重塑张量以匹配矩阵乘法的要求
+        col = col.permute(0, 4, 5, 1, 2, 3).reshape(batch_size * out_height * out_width, -1)
+        
+        return col
+    
+    def multiply(self, x, y):
+        # return np.multiply(x, y)
+        # return torch.matmul(x, y)
+        # matmul_start_time = time.time()
+        # output = torch.matmul(x, y)
+        # matmul_end_time = time.time()
+        # matmul_time = matmul_end_time - matmul_start_time
+        # print(f"matmul_time: {matmul_time}")
+        expo_width = 3
+        mant_width = 4
+        dnsmp_factor = 3
+        # comp_start_time = time.time()
+        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        # comp_end_time = time.time()
+        # comp_time = comp_end_time - comp_start_time
+        sim_hw_add_OFUF = False
+        with_OF_opt = False
+        with_UF_opt = False
+        debug_mode = False
+
+        # custom_start_time = time.time()
+        output = custom_matmul_vectorize(x, y, 
+                                       expo_width, 
+                                       mant_width, 
+                                       comp_table_NN   = comp_table_NN, 
+                                       sim_hw_add_OFUF = sim_hw_add_OFUF, 
+                                       with_OF_opt     = with_OF_opt, 
+                                       with_UF_opt     = with_UF_opt, 
+                                       debug_mode      = debug_mode)
+        # custom_end_time = time.time()
+        # custom_time = custom_end_time - custom_start_time
+        # print(f"comp_time: {comp_time}")
+        # print(f"custom_time: {custom_time}")
+    
+        return output
+    
+    def run_forward(self, x, weight, bias, offsets=None):
+        x = x.contiguous()  # 确保输入张量是连续的
+        # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
+        input_torch = x.detach()   
+        weight_torch = weight.detach()
+
+        batch_size, in_channels, in_height, in_width = input_torch.shape
+        out_channels, in_channels_per_group, kernel_height, kernel_width = weight_torch.shape
+        
+        # 计算输出的尺寸
+        out_height = (in_height + 2 * self.padding[0] - self.dilation[0] * (kernel_height - 1) - 1) // self.stride[0] + 1
+        out_width = (in_width + 2 * self.padding[1] - self.dilation[1] * (kernel_width - 1) - 1) // self.stride[1] + 1
+        
+        # 使用 im2col 重塑输入
+        input_col = self.im2col(input_torch, kernel_height, kernel_width, self.stride, self.padding, self.dilation)
+        # input_col 形状: (batch_size * out_height * out_width, in_channels * kernel_height * kernel_width)
+        
+        # 处理分组卷积
+        group_in_channels = in_channels // self.groups
+        group_out_channels = out_channels // self.groups
+        
+        # 重塑权重
+        weight_col = weight_torch.reshape(out_channels, -1)  # 形状: (out_channels, in_channels_per_group * kernel_height * kernel_width)
+        
+        # 初始化输出张量
+        output = torch.zeros((batch_size * out_height * out_width, out_channels), device=x.device, dtype=x.dtype)
+        
+        for g in range(self.groups):
+            # 输入的索引
+            start_in = g * group_in_channels * kernel_height * kernel_width
+            end_in = (g + 1) * group_in_channels * kernel_height * kernel_width
+            input_group = input_col[:, start_in:end_in]
+            
+            # 输出通道的索引
+            start_out = g * group_out_channels
+            end_out = (g + 1) * group_out_channels
+            weight_group = weight_col[start_out:end_out, :]  # 形状: (group_out_channels, in_channels_per_group * kernel_height * kernel_width)
+            
+            # 执行矩阵乘法
+            output_group = self.multiply(input_group, weight_group.T)
+            
+            # 存储输出
+            output[:, start_out:end_out] = output_group
+        
+        # 重塑输出
+        output = output.reshape(batch_size, out_height, out_width, out_channels)
+        output = output.permute(0, 3, 1, 2)  # 形状: (batch_size, out_channels, out_height, out_width)
+        
+        # 如果有 bias，添加 bias
+        if bias is not None:
+            output += bias.view(1, -1, 1, 1)
+        
+        # 返回 PyTorch 张量
+        return output
+    
+    
+class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
+    def multiply(self, x, y):
+        # return np.multiply(x, y)
+        # return torch.matmul(x, y)
+        expo_width = 3
+        mant_width = 4
+        dnsmp_factor = 3
+        
+        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        sim_hw_add_OFUF = False
+        with_OF_opt = False
+        with_UF_opt = False
+        debug_mode = False
+
+        return custom_matmul_vectorize(x, y, 
+                                       expo_width, 
+                                       mant_width, 
+                                       comp_table_NN   = comp_table_NN, 
+                                       sim_hw_add_OFUF = sim_hw_add_OFUF, 
+                                       with_OF_opt     = with_OF_opt, 
+                                       with_UF_opt     = with_UF_opt, 
+                                       debug_mode      = debug_mode)
+    
+    def run_forward(self, x, weight, bias, offsets=None):
+        x = x.contiguous()
+
+        output = self.multiply(x, weight.t())   
+
+        if bias is not None:
+            output += bias
+        
+        return output
+    
