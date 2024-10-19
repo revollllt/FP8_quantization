@@ -24,6 +24,8 @@ import torch
 import matplotlib.pyplot as plt
 import numpy as np
 
+from utils.CustomBatchSampler import CustomBatchSampler 
+
 class Config(DotDict):
     pass
 
@@ -131,15 +133,17 @@ def validate_quantized(config, load_type):
     print("Model with the ranges estimated:\n{}".format(model))
 
     
-    # # BN Re-estimation
-    # if config.qat.reestimate_bn_stats:
-    #     ReestimateBNStats(
-    #         model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
-    #     )(None)
+    # BN Re-estimation
+    if config.qat.reestimate_bn_stats:
+        ReestimateBNStats(
+            model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
+        )(None)
 
     print("Start quantized validation")
-
-    evaluator.run(dataloaders.val_loader)
+    random_sampler = CustomBatchSampler(dataloaders.val_loader, num_batches=10, start_index=5, step=300)
+    # evaluator.run(dataloaders.val_loader)
+    with torch.inference_mode():
+        evaluator.run(random_sampler)
     final_metrics = evaluator.state.metrics
     print(final_metrics)
 

@@ -11,7 +11,7 @@ from quantization.hijacker import QuantizationHijacker, activations_set
 from quantization.quantization_manager import QuantizationManager
 from quantization.quantized_folded_bn import BNFusedHijacker
 
-from approx.approx_matmul_whole_v3 import *
+from approx.approx_matmul_whole_v4 import *
 
 import time
 
@@ -575,7 +575,9 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
                                        sim_hw_add_OFUF = sim_hw_add_OFUF, 
                                        with_OF_opt     = with_OF_opt, 
                                        with_UF_opt     = with_UF_opt, 
-                                       debug_mode      = debug_mode)
+                                       golden_clip_OF  = False,
+                                       debug_mode      = debug_mode,
+                                       self_check_mode = False)
     
         return output
     
@@ -683,6 +685,13 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
 
 
 class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
+    # def __init__(self, *args, **kwargs):
+    #     super(QCustomBNConv2dTorch, self).__init__(*args, **kwargs)
+    #     self.mult_times = 0
+    # def __init__(self, *args, **kwargs):
+    #     super(QCustomBNConv2dTorch, self).__init__(*args, **kwargs)
+    #     self.approx_calculation = ApproxCalculation()
+    
     def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
         batch_size, channels, height, width = input_data.shape
         
@@ -712,6 +721,9 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         # return np.multiply(x, y)
         # return torch.matmul(x, y)
         # matmul_start_time = time.time()
+        # print(f"x.dtype: {x.dtype}")
+        # print(f"x.shape: {x.shape}")
+        # print(f"y.shape: {y.shape}")
         # output = torch.matmul(x, y)
         # matmul_end_time = time.time()
         # matmul_time = matmul_end_time - matmul_start_time
@@ -736,12 +748,14 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
                                        sim_hw_add_OFUF = sim_hw_add_OFUF, 
                                        with_OF_opt     = with_OF_opt, 
                                        with_UF_opt     = with_UF_opt, 
-                                       debug_mode      = debug_mode)
+                                       golden_clip_OF  = False,
+                                       debug_mode      = debug_mode,
+                                       self_check_mode = False)
         # custom_end_time = time.time()
         # custom_time = custom_end_time - custom_start_time
         # print(f"comp_time: {comp_time}")
         # print(f"custom_time: {custom_time}")
-    
+        torch.cuda.empty_cache()
         return output
     
     def run_forward(self, x, weight, bias, offsets=None):
@@ -821,7 +835,9 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
                                        sim_hw_add_OFUF = sim_hw_add_OFUF, 
                                        with_OF_opt     = with_OF_opt, 
                                        with_UF_opt     = with_UF_opt, 
-                                       debug_mode      = debug_mode)
+                                       golden_clip_OF  = False,
+                                       debug_mode      = debug_mode,
+                                       self_check_mode = False)
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()

@@ -8,6 +8,7 @@ import torch
 from quantization.quantized_folded_bn import BNFusedHijacker
 from utils.imagenet_dataloaders import ImageNetDataLoaders
 
+from tqdm import tqdm
 
 def get_dataloaders_and_model(config, load_type="fp32", **qparams):
     dataloaders = ImageNetDataLoaders(
@@ -81,7 +82,7 @@ def reestimate_BN_stats(model, data_loader, num_batches=50, store_ema_stats=Fals
     device = next(model.parameters()).device
     batch_count = 0
     with torch.no_grad():
-        for x, y in data_loader:
+        for x, y in tqdm(data_loader):
             model(x.to(device))
             # We save the running mean/var to a buffer
             for name, module in model.named_modules():
