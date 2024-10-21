@@ -144,7 +144,7 @@ def quantize_to_fp8_ste_MM(
     # scales = 2.0 ** (log_scales - bias)
 
     result = round_ste_func(xc / scales) * scales 
-    return result
+    return result, bias         # return bias for debug
 
 
 class FP8QuantizerFunc(Function):
@@ -204,6 +204,8 @@ class FPQuantizer(QuantizerBase):
 
         self.allow_unsigned = allow_unsigned
         self.sign_bits = 1
+        
+        self.custom_bias = None
 
     def forward(self, x_float):
         if self.maxval.device != x_float.device:
@@ -211,7 +213,7 @@ class FPQuantizer(QuantizerBase):
         if self.mantissa_bits.device != x_float.device:
             self.mantissa_bits = self.mantissa_bits.to(x_float.device)
 
-        res = quantize_to_fp8_ste_MM(
+        res, self.custom_bias = quantize_to_fp8_ste_MM(
             x_float, self.n_bits, self.maxval, self.mantissa_bits, self.sign_bits
         )
 

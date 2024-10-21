@@ -1,13 +1,9 @@
-#!/usr/bin/env python
-# Copyright (c) 2022 Qualcomm Technologies, Inc.
-# All Rights Reserved.
-
 import os
 import re
 import torch
 from collections import OrderedDict
 from models.mobilenet_v2 import MobileNetV2, InvertedResidual
-from approx.replace_operations_in_mobilenet_v2_v2 import quantize_sequential, Flattener, quantize_model, QCustomBNConv2dTorch
+from approx.replace_operations_with_approx_ops import quantize_sequential, Flattener, quantize_model, QCustomBNConv2dTorch
 from quantization.base_quantized_classes import QuantizedActivation, FP32Acts
 from quantization.base_quantized_model import QuantizedModel
 

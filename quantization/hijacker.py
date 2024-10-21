@@ -90,13 +90,17 @@ class QuantizationHijacker(QuantizedModule):
         weight, bias = self.get_weight_bias()
 
         if self._quant_w:
+            # print(f"before quantize_weights: {weight}")
             weight = self.quantize_weights(weight)
-
+            # print(f"after quantize_weights: {weight}")
         return weight, bias
 
     def quantize_weights(self, weights):
         return self.weight_quantizer(weights)
-
+    
+    def get_weights_fp_bias(self):
+        return self.weight_quantizer.get_fp_bias()
+    
     def get_weight_bias(self):
         bias = None
         if hasattr(self, "bias"):

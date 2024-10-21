@@ -4,7 +4,7 @@ from quantization.quantizers.fp8_quantizer import *
 
 
 n_bits = 8
-expo_bits = 2
+expo_bits = 3
 mant_bits = n_bits - expo_bits - 1
 bias = 2**(expo_bits-1)
 

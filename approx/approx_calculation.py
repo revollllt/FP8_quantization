@@ -583,6 +583,7 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()  # 确保输入张量是连续的
+        weight = weight.contiguous()
         # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
         input_torch = x.detach()   
         weight_torch = weight.detach()
@@ -724,7 +725,7 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         # print(f"x.dtype: {x.dtype}")
         # print(f"x.shape: {x.shape}")
         # print(f"y.shape: {y.shape}")
-        # output = torch.matmul(x, y)
+        # output1 = torch.matmul(x, y)
         # matmul_end_time = time.time()
         # matmul_time = matmul_end_time - matmul_start_time
         # print(f"matmul_time: {matmul_time}")
@@ -741,6 +742,7 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         debug_mode = False
 
         # custom_start_time = time.time()
+        # print(f"y: {y}")
         output = custom_matmul_vectorize(x, y, 
                                        expo_width, 
                                        mant_width, 
@@ -755,11 +757,17 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         # custom_time = custom_end_time - custom_start_time
         # print(f"comp_time: {comp_time}")
         # print(f"custom_time: {custom_time}")
+        # print(f"output1: {output1}")
+        # print(f"output: {output}")
         torch.cuda.empty_cache()
         return output
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()  # 确保输入张量是连续的
+        weight = weight.contiguous()
+        # print(f"weight: {weight}, weight.shape: {weight.shape}") 
+        # fp_bias = self.get_weights_fp_bias()
+        # print(f"fp_bias: {fp_bias}, fp_bias.shape: {fp_bias.shape}")
         # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
         input_torch = x.detach()   
         weight_torch = weight.detach()
@@ -841,6 +849,7 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()
+        weight = weight.contiguous()
 
         output = self.multiply(x, weight.t())   
 

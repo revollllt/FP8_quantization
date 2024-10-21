@@ -120,6 +120,9 @@ class QuantizationManager(nn.Module):
             self.set_quant_range(cur_xmin, cur_xmax)
 
         return self.quantizer(x)
+    
+    def get_fp_bias(self):
+        return self.quantizer.custom_bias
 
     def set_quant_range(self, x_min, x_max):
         self.quantizer.set_quant_range(x_min, x_max)

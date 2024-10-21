@@ -9,6 +9,9 @@ from models.demo_quantized import demo_quantized
 from utils import ClassEnumOptions, MethodMap
 
 from models.mobilenet_v2_quantized_approx import mobilenetv2_quantized_approx
+from models.resnet_quantized_approx import resnet18_quantized_approx, resnet50_quantized_approx
+from models.vit_quantized_approx import vit_quantized_approx
+
 
 class QuantArchitectures(ClassEnumOptions):
     mobilenet_v2_quantized = MethodMap(mobilenetv2_quantized)
@@ -21,3 +24,6 @@ class QuantArchitectures(ClassEnumOptions):
     approx architecture
     '''
     mobilenet_v2_quantized_approx = MethodMap(mobilenetv2_quantized_approx)
+    resnet18_quantized_approx = MethodMap(resnet18_quantized_approx)
+    resnet50_quantized_approx = MethodMap(resnet50_quantized_approx)
+    vit_quantized_approx = MethodMap(vit_quantized_approx)

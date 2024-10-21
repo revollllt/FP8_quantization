@@ -2,16 +2,16 @@ import os
 import re
 import torch
 from collections import OrderedDict
-from quantization.autoquant_utils import quantize_sequential, quantize_model
+from approx.replace_operations_with_approx_ops import quantize_sequential, Flattener, quantize_model, BNQConv
 from quantization.base_quantized_classes import QuantizedActivation, FP32Acts
 from quantization.base_quantized_model import QuantizedModel
 
 from transformers.models.vit.modeling_vit import *
 from transformers import ViTImageProcessor, ViTForImageClassification
-from PIL import Image
-import requests
-import timm
-from torchvision.models import vit_b_16
+# from PIL import Image
+# import requests
+# import timm
+# from torchvision.models import vit_b_16
 
 from typing import Dict, List, Optional, Set, Tuple, Union
 
@@ -391,12 +391,9 @@ class QuantizedVisionTransformerForImageClassification(QuantizedModel):
         logits = self.classifier(sequence_output[:, 0, :])
         
         return logits
+    
 
-
-def vit_quantized(pretrained=True, model_dir=None, load_type="fp32", **qparams):
+def vit_quantized_approx(pretrained=True, model_dir=None, load_type="fp32", **qparams):
     fp_model = VisionTransformerForImageClassification.from_pretrained('google/vit-base-patch16-224')
     quant_model = QuantizedVisionTransformerForImageClassification(fp_model, **qparams)
-    # fp_model = timm.create_model('vit_base_patch16_224', pretrained=True)
-    # fp_model = vit_b_16(pretrained=True)
-    # if pretrained and load_type == "fp32":
     return quant_model
