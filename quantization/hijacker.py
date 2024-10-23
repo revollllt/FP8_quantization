@@ -101,6 +101,9 @@ class QuantizationHijacker(QuantizedModule):
     def get_weights_fp_bias(self):
         return self.weight_quantizer.get_fp_bias()
     
+    def get_acts_fp_bias(self):
+        return self.activation_quantizer.get_fp_bias()
+    
     def get_weight_bias(self):
         bias = None
         if hasattr(self, "bias"):

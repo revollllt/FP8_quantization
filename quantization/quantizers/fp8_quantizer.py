@@ -59,9 +59,9 @@ def decode_float8(S, E, F, bias=16):
     # All other bins         : 2^(exponent-bias) * {1.0 ... 1 + (2^mantissa-1)/2^mantissa}; exponent > 0
     A = int(exponent != 0)
     fraction = A + sum([2 ** -(i + 1) * int(a) for i, a in enumerate(F)])
-    if exponent == 0:
-        print(f"s = {S}", f"e = {E}", f"f = {F}")
-        print(f"value = {sign * fraction * 2.0 ** (1-bias)}")
+    # if exponent == 0:
+    #     print(f"s = {S}", f"e = {E}", f"f = {F}")
+    #     print(f"value = {sign * fraction * 2.0 ** (1-bias)}")
     exponent += int(exponent == 0)
     return sign * fraction * 2.0 ** (exponent - bias)
 
@@ -111,6 +111,7 @@ def quantize_to_fp8_ste_MM(
     if maxval.shape[0] != 1 and len(maxval.shape) != len(x_float.shape):
         maxval = maxval.view([-1] + [1] * (len(x_float.shape) - 1))
     bias = 2**E - torch.log2(maxval) + torch.log2(2 - 2 ** (-M)) - 1  # get bias in maxval
+    bias = torch.floor(bias)
 
     minval = -maxval if sign_bits == 1 else torch.zeros_like(maxval)
     # xc = torch.min(torch.max(x_float, minval), maxval)
@@ -213,11 +214,15 @@ class FPQuantizer(QuantizerBase):
         if self.mantissa_bits.device != x_float.device:
             self.mantissa_bits = self.mantissa_bits.to(x_float.device)
 
+        # scaling the input in case generate subnormal values in approximate calculation
+        x_float = x_float * 2 ** 4
         res, self.custom_bias = quantize_to_fp8_ste_MM(
             x_float, self.n_bits, self.maxval, self.mantissa_bits, self.sign_bits
         )
 
         ebits = self.n_bits - self.mantissa_bits - 1
+        
+        res = res / 2 ** 4 # scaling back the result
         return res
 
     def is_initialized(self):
@@ -236,7 +241,8 @@ class FPQuantizer(QuantizerBase):
             return self.allow_unsigned and x_min >= 0
 
     def set_quant_range(self, x_min, x_max):
-
+        x_min = x_min * 2 ** 4  # scaling the range in case generate subnormal values in approximate calculation
+        x_max = x_max * 2 ** 4
         if self._make_unsigned(x_min):
             self.sign_bits = 0
 

@@ -34,7 +34,9 @@ class BNFusedHijacker(QuantizationHijacker):
 
         # Get quantized weight
         weight, bias = self.get_params()
+        # weight = weight / 2 ** 4
         res = self.run_forward(x, weight, bias)
+        # res = res / 2 ** 8
 
         res = F.batch_norm(
             res,
@@ -53,6 +55,7 @@ class BNFusedHijacker(QuantizationHijacker):
         # Quantize output
         if not self.quantize_input and self._quant_a:
             res = self.activation_quantizer(res)
+        # res = res / 2 ** 4
         return res
 
     def get_bn_dim(self):

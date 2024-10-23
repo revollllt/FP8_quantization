@@ -15,6 +15,8 @@ from approx.approx_matmul_whole_v4 import *
 
 import time
 
+import pandas as pd
+
 class CustomConv2dNumPy(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True):
         super(CustomConv2dNumPy, self).__init__(
@@ -764,10 +766,14 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()  # 确保输入张量是连续的
-        weight = weight.contiguous()
+        weight = weight.contiguous() #
         # print(f"weight: {weight}, weight.shape: {weight.shape}") 
-        # fp_bias = self.get_weights_fp_bias()
-        # print(f"fp_bias: {fp_bias}, fp_bias.shape: {fp_bias.shape}")
+        # if self.groups == 1:
+        #     weight_fp_bias = self.get_weights_fp_bias() 
+        #     act_fp_bias = self.get_acts_fp_bias()
+        #     print(f"weight_fp_bias: {weight_fp_bias}, weight_fp_bias.shape: {weight_fp_bias.shape}")
+        #     print(f"act_fp_bias: {act_fp_bias}, act_fp_bias.shape: {act_fp_bias.shape if act_fp_bias is not None else 'None'}")
+        #     print(f"weigt.shape: {weight.shape}, act.shape: {x.shape}")
         # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
         input_torch = x.detach()   
         weight_torch = weight.detach()
@@ -792,7 +798,6 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         
         # 初始化输出张量
         output = torch.zeros((batch_size * out_height * out_width, out_channels), device=x.device, dtype=x.dtype)
-        
         for g in range(self.groups):
             # 输入的索引
             start_in = g * group_in_channels * kernel_height * kernel_width
@@ -806,6 +811,29 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
             
             # 执行矩阵乘法
             output_group = self.multiply(input_group, weight_group.T)
+            # if self.groups == 1 and act_fp_bias is not None:  # input_col is the same with input_group when groups == 1, so as weight_col and weight_group
+            #     print(f"input_group: {input_group}, input_group.shape: {input_group.shape}")
+            #     print(f"weight_group: {weight_group}, weight_group.shape: {weight_group.shape}")
+            #     # print(f"output_group: {output_group}, output_group.shape: {output_group.shape}")
+                
+            #     if input_group.shape[0] + input_group.shape[1] < 1000:
+            #         weight_np = weight_group.T.cpu().numpy()
+            #         weight_bias_np = weight_fp_bias.squeeze().cpu().numpy()
+            #         act_np = input_group.cpu().numpy()
+            #         act_bias_np = act_fp_bias.cpu().numpy()
+                    
+            #         weight_df = pd.DataFrame(weight_np)
+            #         weight_bias_df = pd.DataFrame(weight_bias_np)
+            #         act_df = pd.DataFrame(act_np)
+            #         act_bias_df = pd.DataFrame(act_bias_np)
+                    
+            #         weight_df.to_csv('/home/zou/codes/FP8-quantization/debug_params/weight.csv', index=False, header=False)
+            #         weight_bias_df.to_csv('/home/zou/codes/FP8-quantization/debug_params/weight_bias.csv', index=False, header=False)
+            #         act_df.to_csv('/home/zou/codes/FP8-quantization/debug_params/act.csv', index=False, header=False)
+            #         act_bias_df.to_csv('/home/zou/codes/FP8-quantization/debug_params/act_bias.csv', index=False, header=False)
+                    
+            #         raise ValueError("Stop here")
+                
             
             # 存储输出
             output[:, start_out:end_out] = output_group
@@ -850,7 +878,11 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()
         weight = weight.contiguous()
-
+        # weight_fp_bias = self.get_weights_fp_bias() 
+        # act_fp_bias = self.get_acts_fp_bias()
+        # print(f"weight_fp_bias: {weight_fp_bias}, weight_fp_bias.shape: {weight_fp_bias.shape}")
+        # print(f"act_fp_bias: {act_fp_bias}, act_fp_bias.shape: {act_fp_bias.shape if act_fp_bias is not None else 'None'}")
+        # print(f"weigt.shape: {weight.shape}, act.shape: {x.shape}")
         output = self.multiply(x, weight.t())   
 
         if bias is not None:

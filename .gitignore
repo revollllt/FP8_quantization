@@ -5,3 +5,5 @@ experiments/
 Makefile
 resources/
 docker/
+debug_params/
+log/*
