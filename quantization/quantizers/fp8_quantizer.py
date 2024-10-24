@@ -57,12 +57,15 @@ def decode_float8(S, E, F, bias=16):
     # Subnormal FP8: exponent == 0: result = 2^(-bias+1)       * 0.F
     # Lowest quantization bin: 2^(-bias+1)       * {0.0 ... 1 + (2^mantissa-1)/2^mantissa}
     # All other bins         : 2^(exponent-bias) * {1.0 ... 1 + (2^mantissa-1)/2^mantissa}; exponent > 0
-    A = int(exponent != 0)
-    fraction = A + sum([2 ** -(i + 1) * int(a) for i, a in enumerate(F)])
+    # A = int(exponent != 0)
+    fraction = 1 + sum([2 ** -(i + 1) * int(a) for i, a in enumerate(F)])
     # if exponent == 0:
     #     print(f"s = {S}", f"e = {E}", f"f = {F}")
-    #     print(f"value = {sign * fraction * 2.0 ** (1-bias)}")
-    exponent += int(exponent == 0)
+    #     print(f"subnormal value = {sign * fraction * 2.0 ** (1-bias)}")
+    #     print(f"our custom normal value = {sign * (fraction + 1) * 2.0 ** (exponent - bias)}")
+    # exponent += int(exponent == 0)
+    if exponent == 0 and fraction == 1:
+        return 0
     return sign * fraction * 2.0 ** (exponent - bias)
 
 
@@ -111,18 +114,19 @@ def quantize_to_fp8_ste_MM(
     if maxval.shape[0] != 1 and len(maxval.shape) != len(x_float.shape):
         maxval = maxval.view([-1] + [1] * (len(x_float.shape) - 1))
     bias = 2**E - torch.log2(maxval) + torch.log2(2 - 2 ** (-M)) - 1  # get bias in maxval
-    bias = torch.floor(bias)
+    bias = torch.round(bias)
 
     minval = -maxval if sign_bits == 1 else torch.zeros_like(maxval)
-    # xc = torch.min(torch.max(x_float, minval), maxval)
+    xc = torch.min(torch.max(x_float, minval), maxval)
     
     # clip subnormal values
-    subnormal_threshold = 2 ** (1 - bias)
-    xc = torch.where(x_float > 0, 
-                     torch.max(torch.min(x_float, maxval), subnormal_threshold),
-                     torch.where(x_float < 0,
-                                 torch.min(torch.max(x_float, -maxval), -subnormal_threshold),
-                                 x_float))
+    # subnormal_threshold = 2 ** (1 - bias)
+    # xc = torch.where(x_float > 0, 
+    #                  torch.max(torch.min(x_float, maxval), subnormal_threshold),
+    #                  torch.where(x_float < 0,
+    #                              torch.min(torch.max(x_float, -maxval), -subnormal_threshold),
+    #                              x_float))
+
 
     """
     2 notes here:
@@ -137,14 +141,35 @@ def quantize_to_fp8_ste_MM(
     """
 
     # log_scales = torch.max((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.)
-    log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.0)
+    # log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.0)
+    log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 0.0) # clamp(x, 0) to use our new custom normal values 
     # print(torch.log2(torch.abs(xc)) )
     # print(log_scales)
+    # print((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach())
+    # print((torch.log2(torch.abs(xc)) + bias).detach())
 
     scales = 2.0 ** (log_scales - M - bias)
     # scales = 2.0 ** (log_scales - bias)
 
     result = round_ste_func(xc / scales) * scales 
+    
+    # clip result to min normal value
+    min_normal_value = 2**(0 - bias) * (1 + 2**(-M))
+    min_normal_value_div2 = 2**(0 - bias) * (1 + 2**(-M)) / 2
+    
+    # when result > 0:
+    #   if result > maxval, set xc to maxval;
+    #   elif result < min_normal_value / 2, set xc to 0;
+    result = torch.where(result > 0,
+                    torch.where(result > maxval, maxval,
+                                torch.where(result < min_normal_value_div2, 0, 
+                                            torch.where(result < min_normal_value, min_normal_value, result))),
+                    torch.where(result < 0,
+                                torch.where(result < -maxval, -maxval,
+                                            torch.where(result > -min_normal_value_div2, 0,
+                                                        torch.where(result > -min_normal_value, -min_normal_value, result))),
+                                            result))
+    
     return result, bias         # return bias for debug
 
 
@@ -215,14 +240,14 @@ class FPQuantizer(QuantizerBase):
             self.mantissa_bits = self.mantissa_bits.to(x_float.device)
 
         # scaling the input in case generate subnormal values in approximate calculation
-        x_float = x_float * 2 ** 4
+        # x_float = x_float * 2 ** 4
         res, self.custom_bias = quantize_to_fp8_ste_MM(
             x_float, self.n_bits, self.maxval, self.mantissa_bits, self.sign_bits
         )
 
         ebits = self.n_bits - self.mantissa_bits - 1
         
-        res = res / 2 ** 4 # scaling back the result
+        # res = res / 2 ** 4 # scaling back the result
         return res
 
     def is_initialized(self):
@@ -241,8 +266,8 @@ class FPQuantizer(QuantizerBase):
             return self.allow_unsigned and x_min >= 0
 
     def set_quant_range(self, x_min, x_max):
-        x_min = x_min * 2 ** 4  # scaling the range in case generate subnormal values in approximate calculation
-        x_max = x_max * 2 ** 4
+        # x_min = x_min * 2 ** 4  # scaling the range in case generate subnormal values in approximate calculation
+        # x_max = x_max * 2 ** 4
         if self._make_unsigned(x_min):
             self.sign_bits = 0
 
