@@ -409,6 +409,12 @@ def quantization_options(func):
         type=click.Choice(["all", "LSQ", "FP_logits", "fc4", "fc4_dw8", "LSQ_paper"]),
         help="Method to quantize the network.",
     )
+    @click.option(
+        "--quantize-input/--no-quantize-input",
+        is_flag=True,
+        default=False,
+        help="If given, quantize the input data.",
+    )
     @wraps(func)
     def func_wrapper(config, *args, **kwargs):
         config.quant, remainder_kwargs = split_dict(
@@ -430,6 +436,7 @@ def quantization_options(func):
                 "act_num_candidates",
                 "act_opt_method",
                 "act_quant_method",
+                "quantize_input",
             ],
         )
 
@@ -498,7 +505,7 @@ def quant_params_dict(config):
         "weight_range_options": weight_range_options,
         "act_range_method": config.quant.act_quant_method.cls,
         "act_range_options": act_range_options,
-        "quantize_input": True if config.quant.quant_setup == "LSQ_paper" else False,
+        "quantize_input": True if config.quant.quant_setup == "LSQ_paper" or config.quant.quantize_input else False,
     }
 
     if config.quant.qmethod.name.startswith("fp_quantizer"):

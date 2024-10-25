@@ -69,7 +69,6 @@ class QuantizationHijacker(QuantizedModule):
 
     def forward(self, x, offsets=None):
         # Quantize input
-        self.quantize_input = True
         if self.quantize_input and self._quant_a:
             x = self.activation_quantizer(x)
 
