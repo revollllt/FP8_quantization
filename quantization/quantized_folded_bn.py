@@ -35,6 +35,9 @@ class BNFusedHijacker(QuantizationHijacker):
         # Get quantized weight
         weight, bias = self.get_params()
         res = self.run_forward(x, weight, bias)
+        
+        if self.quantize_input and self._quant_a:
+            res = self.res_quantizer(res)
 
         res = F.batch_norm(
             res,

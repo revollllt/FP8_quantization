@@ -11,7 +11,7 @@ from quantization.hijacker import QuantizationHijacker, activations_set
 from quantization.quantization_manager import QuantizationManager
 from quantization.quantized_folded_bn import BNFusedHijacker
 
-from approx.approx_matmul_whole_v4 import *
+from approx.approx_matmul_whole_v6 import *
 
 import time
 
@@ -558,6 +558,37 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
     #                             stride=stride)
     #     return input_unfold  # 形状: (batch_size, channels * kernel_height * kernel_width, L)
     
+    def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
+        x_bias = torch.tensor(5) if x_bias is None else x_bias
+        res_bias = torch.tensor(5) if res_bias is None else res_bias
+        x_bias = x_bias.to(torch.int32)
+        y_bias = y_bias.to(torch.int32)
+        res_bias = res_bias.to(torch.int32)
+        
+        expo_width = 3
+        mant_width = 4
+        dnsmp_factor = 3
+        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        
+        if y.shape[1] != 1:
+            results = []
+            for i in range(y.shape[1]):  # y.shape[1] = out_channels
+                # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
+                # result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
+                #                                  x_bias, y_bias[i], res_bias, 
+                #                                  comp_table_NN)
+                result = x @ y[:, i].unsqueeze(1)
+                results.append(result)
+            output = torch.cat(results, dim=1)
+        else:
+            output = x @ y
+            # output = custom_matmul_vectorize(x, y, expo_width, mant_width,
+            #                 x_bias, y_bias, res_bias,
+            #                 comp_table_NN,)
+        
+        torch.cuda.empty_cache()
+        return output
+    
     def multiply(self, x, y):
         # return np.multiply(x, y)
         # return torch.matmul(x, y)
@@ -589,6 +620,9 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
         # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
         input_torch = x.detach()   
         weight_torch = weight.detach()
+        weight_fp_bias = self.get_weights_fp_bias() 
+        act_fp_bias = self.get_acts_fp_bias()
+        res_fp_bias = self.get_res_fp_bias()
 
         batch_size, in_channels, in_height, in_width = input_torch.shape
         out_channels, in_channels_per_group, kernel_height, kernel_width = weight_torch.shape
@@ -621,9 +655,11 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
             start_out = g * group_out_channels
             end_out = (g + 1) * group_out_channels
             weight_group = weight_col[start_out:end_out, :]  # 形状: (group_out_channels, in_channels_per_group * kernel_height * kernel_width)
+            weight_group_fp_bias = weight_fp_bias[start_out:end_out].squeeze()
             
             # 执行矩阵乘法
             output_group = self.multiply(input_group, weight_group.T)
+            # output_group = self.approx_multiply(input_group, weight_group.T, act_fp_bias, weight_group_fp_bias, res_fp_bias)
             
             # 存储输出
             output[:, start_out:end_out] = output_group
@@ -720,6 +756,37 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         
         return col
     
+    def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
+        x_bias = torch.tensor(5) if x_bias is None else x_bias
+        res_bias = torch.tensor(5) if res_bias is None else res_bias
+        x_bias = x_bias.to(torch.int32)
+        y_bias = y_bias.to(torch.int32)
+        res_bias = res_bias.to(torch.int32)
+        
+        expo_width = 3
+        mant_width = 4
+        dnsmp_factor = 3
+        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        
+        if y.shape[1] != 1:
+            results = []
+            for i in range(y.shape[1]):  # y.shape[1] = out_channels
+                # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
+                # result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
+                #                                  x_bias, y_bias[i], res_bias, 
+                #                                  comp_table_NN)
+                result = x @ y[:, i].unsqueeze(1)
+                results.append(result)
+            output = torch.cat(results, dim=1)
+        else:
+            output = x @ y
+            # output = custom_matmul_vectorize(x, y, expo_width, mant_width,
+            #                 x_bias, y_bias, res_bias,
+            #                 comp_table_NN,)
+        
+        torch.cuda.empty_cache()
+        return output
+    
     def multiply(self, x, y):
         # return np.multiply(x, y)
         # return torch.matmul(x, y)
@@ -727,34 +794,34 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         # print(f"x.dtype: {x.dtype}")
         # print(f"x.shape: {x.shape}")
         # print(f"y.shape: {y.shape}")
-        # output1 = torch.matmul(x, y)
+        output = torch.matmul(x, y)
         # matmul_end_time = time.time()
         # matmul_time = matmul_end_time - matmul_start_time
         # print(f"matmul_time: {matmul_time}")
-        expo_width = 3
-        mant_width = 4
-        dnsmp_factor = 3
+        # expo_width = 3
+        # mant_width = 4
+        # dnsmp_factor = 3
         # comp_start_time = time.time()
-        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
         # comp_end_time = time.time()
         # comp_time = comp_end_time - comp_start_time
-        sim_hw_add_OFUF = False
-        with_OF_opt = False
-        with_UF_opt = False
-        debug_mode = False
+        # sim_hw_add_OFUF = False
+        # with_OF_opt = False
+        # with_UF_opt = False
+        # debug_mode = False
 
         # custom_start_time = time.time()
         # print(f"y: {y}")
-        output = custom_matmul_vectorize(x, y, 
-                                       expo_width, 
-                                       mant_width, 
-                                       comp_table_NN   = comp_table_NN, 
-                                       sim_hw_add_OFUF = sim_hw_add_OFUF, 
-                                       with_OF_opt     = with_OF_opt, 
-                                       with_UF_opt     = with_UF_opt, 
-                                       golden_clip_OF  = False,
-                                       debug_mode      = debug_mode,
-                                       self_check_mode = False)
+        # output = custom_matmul_vectorize(x, y, 
+        #                                expo_width, 
+        #                                mant_width, 
+        #                                comp_table_NN   = comp_table_NN, 
+        #                                sim_hw_add_OFUF = sim_hw_add_OFUF, 
+        #                                with_OF_opt     = with_OF_opt, 
+        #                                with_UF_opt     = with_UF_opt, 
+        #                                golden_clip_OF  = False,
+        #                                debug_mode      = debug_mode,
+        #                                self_check_mode = False)
         # custom_end_time = time.time()
         # custom_time = custom_end_time - custom_start_time
         # print(f"comp_time: {comp_time}")
@@ -769,10 +836,12 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         weight = weight.contiguous() #
         # print(f"weight: {weight}, weight.shape: {weight.shape}") 
         # if self.groups == 1:
-        # weight_fp_bias = self.get_weights_fp_bias() 
-        # act_fp_bias = self.get_acts_fp_bias()
+        weight_fp_bias = self.get_weights_fp_bias() 
+        act_fp_bias = self.get_acts_fp_bias()
+        res_fp_bias = self.get_res_fp_bias()
         # print(f"weight_fp_bias: {weight_fp_bias}, weight_fp_bias.shape: {weight_fp_bias.shape}")
         # print(f"act_fp_bias: {act_fp_bias}, act_fp_bias.shape: {act_fp_bias.shape if act_fp_bias is not None else 'None'}")
+        # print(f"res_fp_bias: {res_fp_bias}, res_fp_bias.shape: {res_fp_bias.shape if res_fp_bias is not None else 'None'}")
         # print(f"weigt.shape: {weight.shape}, act.shape: {x.shape}")
         # 保持输入为PyTorch张量，x.detach()可以防止梯度回传
         input_torch = x.detach()   
@@ -808,9 +877,19 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
             start_out = g * group_out_channels
             end_out = (g + 1) * group_out_channels
             weight_group = weight_col[start_out:end_out, :]  # 形状: (group_out_channels, in_channels_per_group * kernel_height * kernel_width)
+            weight_group_fp_bias = weight_fp_bias[start_out:end_out].squeeze()
+            
             
             # 执行矩阵乘法
-            output_group = self.multiply(input_group, weight_group.T)
+            # output_group = self.multiply(input_group, weight_group.T)
+            output_group = self.approx_multiply(input_group, weight_group.T, act_fp_bias, weight_group_fp_bias, res_fp_bias)
+            # if self.groups == 1:
+            # print(f"weight_fp_bias: {weight_fp_bias}, weight_fp_bias.shape: {weight_fp_bias.shape}")
+            # print(f"act_fp_bias: {act_fp_bias}, act_fp_bias.shape: {act_fp_bias.shape if act_fp_bias is not None else 'None'}")
+            # print(f"input_col.shape: {input_col.shape}")
+            # print(f"weight_col.shape: {weight_col.shape}")
+            # print(f"self.groups = {self.groups}, group = {g}")
+            # print(f"input_group.shape: {input_group.shape}, weight_group.shape: {weight_group.shape} \n")
             # if self.groups == 1 and act_fp_bias is not None:  # input_col is the same with input_group when groups == 1, so as weight_col and weight_group
             #     print(f"input_group: {input_group}, input_group.shape: {input_group.shape}")
             #     print(f"weight_group: {weight_group}, weight_group.shape: {weight_group.shape}")
@@ -851,39 +930,74 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
     
     
 class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
-    def multiply(self, x, y):
-        # return np.multiply(x, y)
-        # return torch.matmul(x, y)
+    def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
+        x_bias = torch.tensor(5) if x_bias is None else x_bias
+        res_bias = torch.tensor(5) if res_bias is None else res_bias
+        x_bias = x_bias.to(torch.int32)
+        y_bias = y_bias.to(torch.int32)
+        res_bias = res_bias.to(torch.int32)
+        
         expo_width = 3
         mant_width = 4
         dnsmp_factor = 3
-        
         comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
-        sim_hw_add_OFUF = False
-        with_OF_opt = False
-        with_UF_opt = False
-        debug_mode = False
+        
+        if y.shape[1] != 1:
+            results = []
+            for i in range(y.shape[1]):  # y.shape[1] = out_channels
+                # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
+                result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
+                                                 x_bias, y_bias[i], res_bias, 
+                                                 comp_table_NN)
+                # result = x @ y[:, i].unsqueeze(1)
+                results.append(result)
+            output = torch.cat(results, dim=1)
+        else:
+            # output = x @ y
+            output = custom_matmul_vectorize(x, y, expo_width, mant_width,
+                            x_bias, y_bias, res_bias,
+                            comp_table_NN,)
+        
+        torch.cuda.empty_cache()
+        return output
+                
+    
+    def multiply(self, x, y):
+        # return np.multiply(x, y)
+        return torch.matmul(x, y)
+        # expo_width = 3
+        # mant_width = 4
+        # dnsmp_factor = 3
+        
+        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        # sim_hw_add_OFUF = False
+        # with_OF_opt = False
+        # with_UF_opt = False
+        # debug_mode = False
 
-        return custom_matmul_vectorize(x, y, 
-                                       expo_width, 
-                                       mant_width, 
-                                       comp_table_NN   = comp_table_NN, 
-                                       sim_hw_add_OFUF = sim_hw_add_OFUF, 
-                                       with_OF_opt     = with_OF_opt, 
-                                       with_UF_opt     = with_UF_opt, 
-                                       golden_clip_OF  = False,
-                                       debug_mode      = debug_mode,
-                                       self_check_mode = False)
+        # return custom_matmul_vectorize(x, y, 
+        #                                expo_width, 
+        #                                mant_width, 
+        #                                comp_table_NN   = comp_table_NN, 
+        #                                sim_hw_add_OFUF = sim_hw_add_OFUF, 
+        #                                with_OF_opt     = with_OF_opt, 
+        #                                with_UF_opt     = with_UF_opt, 
+        #                                golden_clip_OF  = False,
+        #                                debug_mode      = debug_mode,
+        #                                self_check_mode = False)
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()
         weight = weight.contiguous()
-        # weight_fp_bias = self.get_weights_fp_bias() 
-        # act_fp_bias = self.get_acts_fp_bias()
+        weight_fp_bias = self.get_weights_fp_bias() 
+        act_fp_bias = self.get_acts_fp_bias()
+        res_fp_bias = self.get_res_fp_bias()
         # print(f"weight_fp_bias: {weight_fp_bias}, weight_fp_bias.shape: {weight_fp_bias.shape}")
         # print(f"act_fp_bias: {act_fp_bias}, act_fp_bias.shape: {act_fp_bias.shape if act_fp_bias is not None else 'None'}")
         # print(f"weigt.shape: {weight.shape}, act.shape: {x.shape}")
-        output = self.multiply(x, weight.t())   
+        # print(f"x.shape: {x.shape}, weight.shape: {weight.shape}\n")
+        # output = self.multiply(x, weight.t())   
+        output = self.approx_multiply(x, weight.t(), act_fp_bias, weight_fp_bias, res_fp_bias)
 
         if bias is not None:
             output += bias

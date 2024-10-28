@@ -30,6 +30,7 @@ def custom_matmul_vectorize(A, B, expo_width, mant_width,
     B_expo, B_mant = float_to_fpany_absint_torch_allnorm(B_param_dict, B, clip_OF=clip_OF, return_extract=True)
 
     # * Key improvement
+    # print(f"custom_bias_A.dtype: {custom_bias_A.dtype}, custom_bias_B.dtype: {custom_bias_B.dtype}, custom_bias_R.dtype: {custom_bias_R.dtype}")
     B_combine_neg = -((custom_bias_A + custom_bias_B - custom_bias_R) << mant_width)
 
     A_mant_scale = A_param_dict["mant_scale"]
@@ -803,7 +804,7 @@ if __name__ == "__main__":
     # debug_mode = True
 
 
-    Iact_bias = 3
+    Iact_bias = torch.tensor(3)
     Iact = torch.tensor([
         [0.5625, 0.3438],
         [0.0625, 0.3750]
@@ -812,7 +813,7 @@ if __name__ == "__main__":
     # print("Iact_quanted =\n", Iact_quanted)
 
 
-    Wght_bias = 5
+    Wght_bias = torch.tensor(5)
     Wght = torch.tensor([
         [-0.109375 , -0.2421875], 
         [0.05859375, 0.2109375 ] 
@@ -828,7 +829,7 @@ if __name__ == "__main__":
     # print(comp_table_NN)
 
 
-    custom_matmul_vectorize(
+    C = custom_matmul_vectorize(
         A               = Iact_quanted, 
         B               = Wght_quanted, 
         expo_width      = expo_width, 
@@ -845,3 +846,6 @@ if __name__ == "__main__":
         # self_check_mode = False
         self_check_mode = True
     )
+    print(f"Iact_quanted = \n{Iact_quanted}, Iact_bias={Iact_bias}, \nWght_quanted = \n{Wght_quanted}, Wght_bias={Wght_bias}")
+    print(f"full precision: \n{Iact_quanted @ Wght_quanted}")
+    print(f"approx value: \n{C}, Oact_bias={Oact_bias}")

@@ -53,6 +53,13 @@ class QuantizationHijacker(QuantizedModule):
             qparams=self.act_qparams,
             range_estim_params=self.act_range_options,
         )
+        
+        self.res_quantizer = QuantizationManager(
+            qmethod=self.act_method,
+            init=self.act_range_method,
+            qparams=self.act_qparams,
+            range_estim_params=self.act_range_options,
+        )
 
         if self.weight_range_method == RangeEstimators.current_minmax:
             weight_init_params = dict(percentile=self.percentile)
@@ -75,6 +82,9 @@ class QuantizationHijacker(QuantizedModule):
         # Get quantized weight
         weight, bias = self.get_params()
         res = self.run_forward(x, weight, bias, offsets=offsets)
+        
+        if self.quantize_input and self._quant_a:
+            res = self.res_quantizer(res)
 
         # Apply fused activation function
         if self.activation_function is not None:
@@ -103,6 +113,9 @@ class QuantizationHijacker(QuantizedModule):
     
     def get_acts_fp_bias(self):
         return self.activation_quantizer.get_fp_bias()
+    
+    def get_res_fp_bias(self):
+        return self.res_quantizer.get_fp_bias()
     
     def get_weight_bias(self):
         bias = None
