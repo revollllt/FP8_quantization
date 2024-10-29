@@ -30,7 +30,6 @@ def custom_matmul_vectorize(A, B, expo_width, mant_width,
     B_expo, B_mant = float_to_fpany_absint_torch_allnorm(B_param_dict, B, clip_OF=clip_OF, return_extract=True)
 
     # * Key improvement
-    # print(f"custom_bias_A.dtype: {custom_bias_A.dtype}, custom_bias_B.dtype: {custom_bias_B.dtype}, custom_bias_R.dtype: {custom_bias_R.dtype}")
     B_combine_neg = -((custom_bias_A + custom_bias_B - custom_bias_R) << mant_width)
 
     A_mant_scale = A_param_dict["mant_scale"]
@@ -102,6 +101,10 @@ def custom_matmul_vectorize(A, B, expo_width, mant_width,
     # * 3d -> 2d
     approx_result_2d = approx_result_fp_3d.sum(dim=1)
 
+    # MARK: Add one quant here and the self-check mode will be alright
+    approx_result_2d = quant_to_fp_any_vectorize_torch(approx_result_2d, expo_width, mant_width, custom_bias_R, clip_OF=False)
+
+
     if debug_mode:
         print("approx_result_2d =\n", approx_result_2d.numpy())
 
@@ -122,8 +125,6 @@ def custom_matmul_vectorize(A, B, expo_width, mant_width,
         # -- Release --
         del golden_result_withquant_2d, error
         torch.cuda.empty_cache()
-
-
 
 
     return approx_result_2d
@@ -188,15 +189,6 @@ def golden_result_withquant(A, B, expo_width, mant_width, custom_bias_R, golden_
     torch.cuda.empty_cache()
 
     return golden_result_withquant_2d
-
-
-
-
-
-
-
-
-
 
 
 
@@ -789,9 +781,9 @@ if __name__ == "__main__":
 
 
     # ! TODO: 在 Oact_bias 变得比较大时，似乎误差修补没什么用，不知道是为什么
-    dnsmp_factor = 3
+    # dnsmp_factor = 3
     # dnsmp_factor = 4
-    # dnsmp_factor = 5
+    dnsmp_factor = 5
 
 
     # ! FIXME:
@@ -804,20 +796,40 @@ if __name__ == "__main__":
     # debug_mode = True
 
 
-    Iact_bias = torch.tensor(3)
+
+    Iact_bias = 3
     Iact = torch.tensor([
-        [0.5625, 0.3438],
-        [0.0625, 0.3750]
+        [0.5625 , 0.3438, 0.1328125 , 0.0859375],
+        [0.0625 , 0.3750, 0.4375    , 0.5      ],
+        [0.96875, 1     , 1.0625    , 1.125    ],
     ])
+
+
+    Wght_bias = 5
+    Wght = torch.tensor([
+        [-0.109375 ], 
+        [-0.2421875], 
+        [0.05859375],
+        [0.2109375 ] 
+    ])
+
+
+
+
+    # Iact_bias = 3
+    # Iact = torch.tensor([
+    #     [0.5625, 0.3438],
+    #     [0.0625, 0.3750]
+    # ])
     Iact_quanted = quant_to_fp_any_vectorize_torch(Iact, expo_width, mant_width, custom_bias=Iact_bias, clip_OF=True)
     # print("Iact_quanted =\n", Iact_quanted)
 
 
-    Wght_bias = torch.tensor(5)
-    Wght = torch.tensor([
-        [-0.109375 , -0.2421875], 
-        [0.05859375, 0.2109375 ] 
-    ])
+    # Wght_bias = 5
+    # Wght = torch.tensor([
+    #     [-0.109375 , -0.2421875], 
+    #     [0.05859375, 0.2109375 ] 
+    # ])
     Wght_quanted = quant_to_fp_any_vectorize_torch(Wght, expo_width, mant_width, custom_bias=Wght_bias, clip_OF=True)
     # print("Wght_quanted =\n", Wght_quanted)
 
@@ -846,6 +858,6 @@ if __name__ == "__main__":
         # self_check_mode = False
         self_check_mode = True
     )
-    print(f"Iact_quanted = \n{Iact_quanted}, Iact_bias={Iact_bias}, \nWght_quanted = \n{Wght_quanted}, Wght_bias={Wght_bias}")
-    print(f"full precision: \n{Iact_quanted @ Wght_quanted}")
-    print(f"approx value: \n{C}, Oact_bias={Oact_bias}")
+    # print(f"Iact_quanted = \n{Iact_quanted}, Iact_bias={Iact_bias}, \nWght_quanted = \n{Wght_quanted}, Wght_bias={Wght_bias}")
+    # print(f"full precision: \n{Iact_quanted @ Wght_quanted}")
+    # print(f"approx value: \n{C}, Oact_bias={Oact_bias}")
