@@ -35,6 +35,11 @@ def _set_layer_estimate_ranges_train(layer):
     if isinstance(layer, QuantizationManager):
         if layer.quantizer.is_initialized:
             layer.estimate_ranges_train()
+            
+def _set_layer_approx_calculation(layer):
+    if isinstance(layer, QuantizedModule):
+        if layer.approx_flag is not None:
+            layer.approx_calculation()
 
 
 class QuantizedModule(nn.Module):
@@ -98,6 +103,8 @@ class QuantizedModule(nn.Module):
             **weight_quant_kwargs,
             **self.fp8_kwargs
         )
+        
+        self.approx_flag = False
 
     def quantized_weights(self):
         self._quant_w = torch.BoolTensor([True])
@@ -151,6 +158,10 @@ class QuantizedModule(nn.Module):
         )
         parent_repr = super().extra_repr()
         return "{},\n{}".format(parent_repr, quant_state) if parent_repr else quant_state
+    
+    def approx_calculation(self):
+        self.approx_flag = True
+        self.apply(_set_layer_approx_calculation)
 
 
 class QuantizedActivation(QuantizedModule):

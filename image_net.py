@@ -80,7 +80,7 @@ def validate_quantized(config, load_type):
 
     # Fix ranges
     model.fix_ranges()
-
+    # model.approx_calculation()
     # '''
     # test
     # '''

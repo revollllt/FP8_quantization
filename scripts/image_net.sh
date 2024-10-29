@@ -1,4 +1,5 @@
 #!/bin/bash
+device=0
 
 seed=10
 
@@ -12,7 +13,7 @@ batch_size=16
 n_bits=8
 
 
-python image_net.py validate-quantized \
+CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --images-dir ${image_dir} \
     --architecture ${architecture} \
     --batch-size ${batch_size} \

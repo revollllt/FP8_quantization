@@ -12,6 +12,7 @@ from quantization.base_quantized_classes import (
     _set_layer_estimate_ranges_train,
     _set_layer_learn_ranges,
     _set_layer_fix_ranges,
+    _set_layer_approx_calculation,
 )
 from quantization.quantizers import QuantizerBase
 
@@ -133,3 +134,6 @@ class QuantizedModel(nn.Module):
 
     def fix_ranges(self):
         self.apply(_set_layer_fix_ranges)
+
+    def approx_calculation(self):
+        self.apply(_set_layer_approx_calculation)

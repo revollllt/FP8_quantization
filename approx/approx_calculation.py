@@ -574,17 +574,21 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
             results = []
             for i in range(y.shape[1]):  # y.shape[1] = out_channels
                 # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
-                # result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
-                #                                  x_bias, y_bias[i], res_bias, 
-                #                                  comp_table_NN)
-                result = x @ y[:, i].unsqueeze(1)
+                if self.approx_flag:
+                    result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
+                                                    x_bias, y_bias[i], res_bias, 
+                                                    comp_table_NN)
+                else:
+                    result = x @ y[:, i].unsqueeze(1)
                 results.append(result)
             output = torch.cat(results, dim=1)
         else:
-            output = x @ y
-            # output = custom_matmul_vectorize(x, y, expo_width, mant_width,
-            #                 x_bias, y_bias, res_bias,
-            #                 comp_table_NN,)
+            if self.approx_flag:
+                output = custom_matmul_vectorize(x, y, expo_width, mant_width,
+                                x_bias, y_bias, res_bias,
+                                comp_table_NN,)
+            else:
+                output = x @ y
         
         torch.cuda.empty_cache()
         return output
@@ -772,17 +776,23 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
             results = []
             for i in range(y.shape[1]):  # y.shape[1] = out_channels
                 # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
-                # result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
-                #                                  x_bias, y_bias[i], res_bias, 
-                #                                  comp_table_NN)
-                result = x @ y[:, i].unsqueeze(1)
+                if self.approx_flag:
+                    result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
+                                                    x_bias, y_bias[i], res_bias, 
+                                                    comp_table_NN)
+                    # print(f"approx result: {result}")
+                else:
+                    result = x @ y[:, i].unsqueeze(1)
+                    # print(f"result: {result}")
                 results.append(result)
             output = torch.cat(results, dim=1)
         else:
-            output = x @ y
-            # output = custom_matmul_vectorize(x, y, expo_width, mant_width,
-            #                 x_bias, y_bias, res_bias,
-            #                 comp_table_NN,)
+            if self.approx_flag:
+                output = custom_matmul_vectorize(x, y, expo_width, mant_width,
+                                x_bias, y_bias, res_bias,
+                                comp_table_NN,)
+            else:
+                output = x @ y
         
         torch.cuda.empty_cache()
         return output
@@ -946,17 +956,21 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
             results = []
             for i in range(y.shape[1]):  # y.shape[1] = out_channels
                 # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
-                result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
-                                                 x_bias, y_bias[i], res_bias, 
-                                                 comp_table_NN)
-                # result = x @ y[:, i].unsqueeze(1)
+                if self.approx_flag:
+                    result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
+                                                    x_bias, y_bias[i], res_bias, 
+                                                    comp_table_NN)
+                else:
+                    result = x @ y[:, i].unsqueeze(1)
                 results.append(result)
             output = torch.cat(results, dim=1)
         else:
-            # output = x @ y
-            output = custom_matmul_vectorize(x, y, expo_width, mant_width,
-                            x_bias, y_bias, res_bias,
-                            comp_table_NN,)
+            if self.approx_flag:
+                output = custom_matmul_vectorize(x, y, expo_width, mant_width,
+                                x_bias, y_bias, res_bias,
+                                comp_table_NN,)
+            else:
+                output = x @ y
         
         torch.cuda.empty_cache()
         return output
