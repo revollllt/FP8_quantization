@@ -520,8 +520,26 @@ class QCustomLinearCuPy(QuantizationHijacker, nn.Linear):
 '''
 CustomConv2dTorch with Quantization
 '''
+class QCustomTorchApprox():
+    def __init__(self):
+        super().__init__()
+        self.approx_params = {
+            'expo_width': 3,
+            'mant_width': 4,
+            'dnsmp_factor': 3,
+            'sim_hw_add_OFUF': False,
+            'with_OF_opt': False,
+            'with_UF_opt': False,
+            'golden_clip_OF': False,
+            'debug_mode': False,
+            'self_check_mode': False,
+        }
 
-class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
+    def get_approx_params(self):
+        return self.approx_params
+
+
+class QCustomConv2dTorch(QCustomTorchApprox, QuantizationHijacker, nn.Conv2d):
     def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
         batch_size, channels, height, width = input_data.shape
         
@@ -781,6 +799,11 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
                                                     x_bias, y_bias[i], res_bias, 
                                                     comp_table_NN)
                     # print(f"approx result: {result}")
+                elif self.quantize_after_mult_and_add:
+                    result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
+                    result3d_quantized = self.res_quantizer(result3d)
+                    result2d = result3d_quantized.sum(dim=1)
+                    result = self.res_quantizer(result2d)
                 else:
                     result = x @ y[:, i].unsqueeze(1)
                     # print(f"result: {result}")
@@ -960,6 +983,11 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
                                                     x_bias, y_bias[i], res_bias, 
                                                     comp_table_NN)
+                elif self.quantize_after_mult_and_add:
+                    result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
+                    result3d_quantized = self.res_quantizer(result3d)
+                    result2d = result3d_quantized.sum(dim=1)
+                    result = self.res_quantizer(result2d)
                 else:
                     result = x @ y[:, i].unsqueeze(1)
                 results.append(result)

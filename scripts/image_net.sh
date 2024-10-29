@@ -12,6 +12,10 @@ batch_size=16
 
 n_bits=8
 
+expo_width=3
+mant_width=4
+dnsmp_factor=3
+
 
 CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --images-dir ${image_dir} \
@@ -25,10 +29,13 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --quant-setup all \
     --qmethod fp_quantizer \
     --per-channel \
-    --fp8-mantissa-bits=4 \
+    --fp8-mantissa-bits=$mant_width \
     --fp8-set-maxval \
     --no-fp8-mse-include-mantissa-bits \
     --weight-quant-method=current_minmax \
     --act-quant-method=allminmax \
     --num-est-batches=1 \
-    --quantize-input
+    --quantize-input \
+    --expo-width ${expo_width} \
+    --mant-width ${mant_width} \
+    --dnsmp-factor ${dnsmp_factor}

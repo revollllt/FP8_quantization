@@ -170,4 +170,11 @@ def validate_quantized_demo(config, load_type):
     pass
 
 if __name__ == "__main__":
-    fp8_cmd_group()
+    import argparse
+    from approx.approx_calculation import QCustomTorchApprox
+    parser = argparse.ArgumentParser(description="ImageNet Validation Script")
+    parser.add_argument('--expo-width', type=int, default=3, help='Exponent width for quantization')
+    parser.add_argument('--mant-width', type=int, default=4, help='Mantissa width for quantization')
+    parser.add_argument('--dnsmp-factor', type=int, default=3, help='Downsampling factor')
+    args, remaining_args = parser.parse_known_args()
+    fp8_cmd_group(remaining_args)

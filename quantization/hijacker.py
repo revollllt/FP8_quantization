@@ -76,6 +76,7 @@ class QuantizationHijacker(QuantizedModule):
 
     def forward(self, x, offsets=None):
         self.approx_flag = False
+        self.quantize_after_mult_and_add = False
         # Quantize input
         if self.quantize_input and self._quant_a:
             x = self.activation_quantizer(x)
@@ -87,8 +88,11 @@ class QuantizationHijacker(QuantizedModule):
         if self.quantize_input and self._quant_a:
             res1 = self.res_quantizer(res1)
 
+        self.quantize_after_mult_and_add = True
+        res = self.run_forward(x, weight, bias)
+        
         self.approx_flag = True
-        res = self.run_forward(x, weight, bias, offsets=offsets)
+        approx_res = self.run_forward(x, weight, bias, offsets=offsets)
 
         # Apply fused activation function
         if self.activation_function is not None:

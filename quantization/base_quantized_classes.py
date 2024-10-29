@@ -105,6 +105,7 @@ class QuantizedModule(nn.Module):
         )
         
         self.approx_flag = False
+        self.quantize_after_mult_and_add = False
 
     def quantized_weights(self):
         self._quant_w = torch.BoolTensor([True])
