@@ -141,8 +141,8 @@ def quantize_to_fp8_ste_MM(
     """
 
     # log_scales = torch.max((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.)
-    # log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.0)
-    log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 0.0) # clamp(x, 0) to use our new custom normal values 
+    log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 1.0)
+    # log_scales = torch.clamp((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach(), 0.0) # clamp(x, 0) to use our new custom normal values 
     # print(torch.log2(torch.abs(xc)) )
     # print(log_scales)
     # print((torch.floor(torch.log2(torch.abs(xc)) + bias)).detach())
@@ -153,22 +153,22 @@ def quantize_to_fp8_ste_MM(
 
     result = round_ste_func(xc / scales) * scales 
     
-    # clip result to min normal value
-    min_normal_value = 2**(0 - bias) * (1 + 2**(-M))
-    min_normal_value_div2 = 2**(0 - bias) * (1 + 2**(-M)) / 2
+    # # clip result to min normal value
+    # min_normal_value = 2**(0 - bias) * (1 + 2**(-M))
+    # min_normal_value_div2 = 2**(0 - bias) * (1 + 2**(-M)) / 2
     
-    # when result > 0:
-    #   if result > maxval, set xc to maxval;
-    #   elif result < min_normal_value / 2, set xc to 0;
-    result = torch.where(result > 0,
-                    torch.where(result > maxval, maxval,
-                                torch.where(result < min_normal_value_div2, 0, 
-                                            torch.where(result < min_normal_value, min_normal_value, result))),
-                    torch.where(result < 0,
-                                torch.where(result < -maxval, -maxval,
-                                            torch.where(result > -min_normal_value_div2, 0,
-                                                        torch.where(result > -min_normal_value, -min_normal_value, result))),
-                                            result))
+    # # when result > 0:
+    # #   if result > maxval, set xc to maxval;
+    # #   elif result < min_normal_value / 2, set xc to 0;
+    # result = torch.where(result > 0,
+    #                 torch.where(result > maxval, maxval,
+    #                             torch.where(result < min_normal_value_div2, 0, 
+    #                                         torch.where(result < min_normal_value, min_normal_value, result))),
+    #                 torch.where(result < 0,
+    #                             torch.where(result < -maxval, -maxval,
+    #                                         torch.where(result > -min_normal_value_div2, 0,
+    #                                                     torch.where(result > -min_normal_value, -min_normal_value, result))),
+    #                                         result))
     
     return result, bias         # return bias for debug
 

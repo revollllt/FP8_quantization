@@ -36,16 +36,22 @@ class BNFusedHijacker(QuantizationHijacker):
 
         # Get quantized weight
         weight, bias = self.get_params()
-        res1 = self.run_forward(x, weight, bias)
-        
-        if self.quantize_input and self._quant_a:
-            res1 = self.res_quantizer(res1)
-        
-        self.quantize_after_mult_and_add = True
         res = self.run_forward(x, weight, bias)
         
+        if self.quantize_input and self._quant_a:
+            res = self.res_quantizer(res)
+        
+        # self.quantize_after_mult_and_add = True
+        # res = self.run_forward(x, weight, bias)
+        
         self.approx_flag = True
-        approx_res = self.run_forward(x, weight, bias)
+        res = self.run_forward(x, weight, bias)
+        
+        # print(f"qamaa_res.shape: {res.shape}")
+        # print(f"qaa_res.shape: {res1.shape}")
+        # mse = F.mse_loss(res, res1)
+        # rmse = torch.sqrt(mse)
+        # print(f"RMSE: {rmse}, MSE: {mse}")
 
         res = F.batch_norm(
             res,

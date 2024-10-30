@@ -83,16 +83,16 @@ class QuantizationHijacker(QuantizedModule):
 
         # Get quantized weight
         weight, bias = self.get_params()
-        res1 = self.run_forward(x, weight, bias, offsets=offsets)
+        res = self.run_forward(x, weight, bias, offsets=offsets)
         
         if self.quantize_input and self._quant_a:
-            res1 = self.res_quantizer(res1)
+            res = self.res_quantizer(res)
 
-        self.quantize_after_mult_and_add = True
-        res = self.run_forward(x, weight, bias)
+        # self.quantize_after_mult_and_add = True
+        # res = self.run_forward(x, weight, bias)
         
         self.approx_flag = True
-        approx_res = self.run_forward(x, weight, bias, offsets=offsets)
+        res = self.run_forward(x, weight, bias, offsets=offsets)
 
         # Apply fused activation function
         if self.activation_function is not None:

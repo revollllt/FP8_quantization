@@ -11,7 +11,10 @@ from quantization.hijacker import QuantizationHijacker, activations_set
 from quantization.quantization_manager import QuantizationManager
 from quantization.quantized_folded_bn import BNFusedHijacker
 
-from approx.approx_matmul_whole_v6 import *
+from quantization.quantizers.fp8_quantizer import quantize_to_fp8_ste_MM
+
+# from approx.approx_matmul_whole_v6 import *
+from approx.approx_matmul_whole_v8 import *
 
 import time
 
@@ -523,6 +526,8 @@ CustomConv2dTorch with Quantization
 class QCustomTorchApprox():
     def __init__(self):
         super().__init__()
+        
+    def get_approx_params(self):
         self.approx_params = {
             'expo_width': 3,
             'mant_width': 4,
@@ -531,15 +536,15 @@ class QCustomTorchApprox():
             'with_OF_opt': False,
             'with_UF_opt': False,
             'golden_clip_OF': False,
+            'double_quant' : True,
             'debug_mode': False,
             'self_check_mode': False,
         }
 
-    def get_approx_params(self):
         return self.approx_params
 
 
-class QCustomConv2dTorch(QCustomTorchApprox, QuantizationHijacker, nn.Conv2d):
+class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d, QCustomTorchApprox):
     def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
         batch_size, channels, height, width = input_data.shape
         
@@ -583,10 +588,20 @@ class QCustomConv2dTorch(QCustomTorchApprox, QuantizationHijacker, nn.Conv2d):
         y_bias = y_bias.to(torch.int32)
         res_bias = res_bias.to(torch.int32)
         
-        expo_width = 3
-        mant_width = 4
-        dnsmp_factor = 3
-        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        self.approx_params = self.get_approx_params()
+        # print(f"self.approx_params {self.approx_params}")
+        expo_width = self.approx_params['expo_width']
+        mant_width = self.approx_params['mant_width']
+        dnsmp_factor = self.approx_params['dnsmp_factor']
+        sim_hw_add_OFUF = self.approx_params['sim_hw_add_OFUF']
+        with_OF_opt = self.approx_params['with_OF_opt']
+        with_UF_opt = self.approx_params['with_UF_opt']
+        golden_clip_OF = self.approx_params['golden_clip_OF']
+        double_quant = self.approx_params['double_quant']
+        debug_mode = self.approx_params['debug_mode']
+        self_check_mode = self.approx_params['self_check_mode']
+        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor)
         
         if y.shape[1] != 1:
             results = []
@@ -594,8 +609,17 @@ class QCustomConv2dTorch(QCustomTorchApprox, QuantizationHijacker, nn.Conv2d):
                 # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
                 if self.approx_flag:
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
-                                                    x_bias, y_bias[i], res_bias, 
+                                                    x_bias.item(), y_bias[i].item(), res_bias.item(), 
                                                     comp_table_NN)
+                elif self.quantize_after_mult_and_add:
+                    result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
+                    # result3d_quantized = self.res_quantizer(result3d)
+                    result3d_quantized, _ = quantize_to_fp8_ste_MM(result3d, self.res_quantizer.quantizer.n_bits, self.res_quantizer.quantizer.maxval, self.res_quantizer.quantizer.mantissa_bits, self.res_quantizer.quantizer.sign_bits)
+                    # result3d_quantized = result3d
+                    result2d = result3d_quantized.sum(dim=1)
+                    # result = self.res_quantizer(result2d)
+                    result, _ = quantize_to_fp8_ste_MM(result2d, self.res_quantizer.quantizer.n_bits, self.res_quantizer.quantizer.maxval, self.res_quantizer.quantizer.mantissa_bits, self.res_quantizer.quantizer.sign_bits)
+                    # result = result2d
                 else:
                     result = x @ y[:, i].unsqueeze(1)
                 results.append(result)
@@ -613,28 +637,8 @@ class QCustomConv2dTorch(QCustomTorchApprox, QuantizationHijacker, nn.Conv2d):
     
     def multiply(self, x, y):
         # return np.multiply(x, y)
-        # return torch.matmul(x, y)
-        expo_width = 3
-        mant_width = 4
-        dnsmp_factor = 3
-        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
-        sim_hw_add_OFUF = False
-        with_OF_opt = False
-        with_UF_opt = False
-        debug_mode = False
+        return torch.matmul(x, y)
 
-        output = custom_matmul_vectorize(x, y, 
-                                       expo_width, 
-                                       mant_width, 
-                                       comp_table_NN   = comp_table_NN, 
-                                       sim_hw_add_OFUF = sim_hw_add_OFUF, 
-                                       with_OF_opt     = with_OF_opt, 
-                                       with_UF_opt     = with_UF_opt, 
-                                       golden_clip_OF  = False,
-                                       debug_mode      = debug_mode,
-                                       self_check_mode = False)
-    
-        return output
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()  # 确保输入张量是连续的
@@ -696,63 +700,10 @@ class QCustomConv2dTorch(QCustomTorchApprox, QuantizationHijacker, nn.Conv2d):
         
         # 返回 PyTorch 张量
         return output
-    # def run_forward(self, x, weight, bias, offsets=None):
-    #     batch_size, in_channels, in_height, in_width = x.shape
-    #     out_channels, _, kernel_height, kernel_width = weight.shape
-        
-    #     # 计算输出尺寸
-    #     out_height = (in_height + 2 * self.padding[0] - self.dilation[0] * (kernel_height - 1) - 1) // self.stride[0] + 1
-    #     out_width = (in_width + 2 * self.padding[1] - self.dilation[1] * (kernel_width - 1) - 1) // self.stride[1] + 1
-        
-    #     # 展开输入张量
-    #     input_unfold = self.im2col(x, kernel_height, kernel_width, self.stride, self.padding, self.dilation)
-    #     # 形状: (batch_size, in_channels * kernel_height * kernel_width, out_height * out_width)
-        
-    #     # 处理分组卷积
-    #     groups = self.groups
-    #     group_in_channels = in_channels // groups
-    #     group_out_channels = out_channels // groups
-        
-    #     # 重塑输入张量以适应分组
-    #     input_unfold = input_unfold.view(batch_size, groups, group_in_channels * kernel_height * kernel_width, -1)
-    #     # 形状: (batch_size, groups, group_in_channels * kernel_height * kernel_width, out_height * out_width)
-        
-    #     # 重塑权重张量
-    #     weight = weight.view(groups, group_out_channels, group_in_channels * kernel_height * kernel_width)
-    #     # 形状: (groups, group_out_channels, group_in_channels * kernel_height * kernel_width)
-        
-    #     # 执行批量矩阵乘法
-    #     # 首先交换 input_unfold 的最后两个维度以匹配矩阵乘法要求
-    #     input_unfold = input_unfold.permute(0, 1, 3, 2)
-    #     # 形状: (batch_size, groups, out_height * out_width, group_in_channels * kernel_height * kernel_width)
-        
-    #     # 进行矩阵乘法
-    #     # output = torch.matmul(input_unfold, weight.transpose(2, 1))
-    #     output = self.multiply(input_unfold, weight.transpose(2, 1))
-    #     # 形状: (batch_size, groups, out_height * out_width, group_out_channels)
-        
-    #     # 调整输出形状
-    #     output = output.permute(0, 1, 3, 2).contiguous()
-    #     # 形状: (batch_size, groups, group_out_channels, out_height * out_width)
-        
-    #     output = output.view(batch_size, out_channels, out_height, out_width)
-    #     # 形状: (batch_size, out_channels, out_height, out_width)
-        
-    #     # 添加偏置（如果有）
-    #     if bias is not None:
-    #         output += bias.view(1, -1, 1, 1)
-        
-    #     return output
 
 
-class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
-    # def __init__(self, *args, **kwargs):
-    #     super(QCustomBNConv2dTorch, self).__init__(*args, **kwargs)
-    #     self.mult_times = 0
-    # def __init__(self, *args, **kwargs):
-    #     super(QCustomBNConv2dTorch, self).__init__(*args, **kwargs)
-    #     self.approx_calculation = ApproxCalculation()
-    
+
+class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d, QCustomTorchApprox):    
     def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
         batch_size, channels, height, width = input_data.shape
         
@@ -785,10 +736,20 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         y_bias = y_bias.to(torch.int32)
         res_bias = res_bias.to(torch.int32)
         
-        expo_width = 3
-        mant_width = 4
-        dnsmp_factor = 3
-        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        self.approx_params = self.get_approx_params()
+        # print(f"self.approx_params {self.approx_params}")
+        expo_width = self.approx_params['expo_width']
+        mant_width = self.approx_params['mant_width']
+        dnsmp_factor = self.approx_params['dnsmp_factor']
+        sim_hw_add_OFUF = self.approx_params['sim_hw_add_OFUF']
+        with_OF_opt = self.approx_params['with_OF_opt']
+        with_UF_opt = self.approx_params['with_UF_opt']
+        golden_clip_OF = self.approx_params['golden_clip_OF']
+        double_quant = self.approx_params['double_quant']
+        debug_mode = self.approx_params['debug_mode']
+        self_check_mode = self.approx_params['self_check_mode']
+        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor)
         
         if y.shape[1] != 1:
             results = []
@@ -796,17 +757,19 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
                 # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
                 if self.approx_flag:
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
-                                                    x_bias, y_bias[i], res_bias, 
+                                                    x_bias.item(), y_bias[i].item(), res_bias.item(), 
                                                     comp_table_NN)
-                    # print(f"approx result: {result}")
                 elif self.quantize_after_mult_and_add:
                     result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
-                    result3d_quantized = self.res_quantizer(result3d)
+                    # result3d_quantized = self.res_quantizer(result3d)
+                    result3d_quantized, _ = quantize_to_fp8_ste_MM(result3d, self.res_quantizer.quantizer.n_bits, self.res_quantizer.quantizer.maxval, self.res_quantizer.quantizer.mantissa_bits, self.res_quantizer.quantizer.sign_bits)
+                    # result3d_quantized = result3d
                     result2d = result3d_quantized.sum(dim=1)
-                    result = self.res_quantizer(result2d)
+                    # result = self.res_quantizer(result2d)
+                    result, _ = quantize_to_fp8_ste_MM(result2d, self.res_quantizer.quantizer.n_bits, self.res_quantizer.quantizer.maxval, self.res_quantizer.quantizer.mantissa_bits, self.res_quantizer.quantizer.sign_bits)
+                    # result = result2d
                 else:
                     result = x @ y[:, i].unsqueeze(1)
-                    # print(f"result: {result}")
                 results.append(result)
             output = torch.cat(results, dim=1)
         else:
@@ -821,46 +784,8 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         return output
     
     def multiply(self, x, y):
-        # return np.multiply(x, y)
-        # return torch.matmul(x, y)
-        # matmul_start_time = time.time()
-        # print(f"x.dtype: {x.dtype}")
-        # print(f"x.shape: {x.shape}")
-        # print(f"y.shape: {y.shape}")
         output = torch.matmul(x, y)
-        # matmul_end_time = time.time()
-        # matmul_time = matmul_end_time - matmul_start_time
-        # print(f"matmul_time: {matmul_time}")
-        # expo_width = 3
-        # mant_width = 4
-        # dnsmp_factor = 3
-        # comp_start_time = time.time()
-        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
-        # comp_end_time = time.time()
-        # comp_time = comp_end_time - comp_start_time
-        # sim_hw_add_OFUF = False
-        # with_OF_opt = False
-        # with_UF_opt = False
-        # debug_mode = False
 
-        # custom_start_time = time.time()
-        # print(f"y: {y}")
-        # output = custom_matmul_vectorize(x, y, 
-        #                                expo_width, 
-        #                                mant_width, 
-        #                                comp_table_NN   = comp_table_NN, 
-        #                                sim_hw_add_OFUF = sim_hw_add_OFUF, 
-        #                                with_OF_opt     = with_OF_opt, 
-        #                                with_UF_opt     = with_UF_opt, 
-        #                                golden_clip_OF  = False,
-        #                                debug_mode      = debug_mode,
-        #                                self_check_mode = False)
-        # custom_end_time = time.time()
-        # custom_time = custom_end_time - custom_start_time
-        # print(f"comp_time: {comp_time}")
-        # print(f"custom_time: {custom_time}")
-        # print(f"output1: {output1}")
-        # print(f"output: {output}")
         torch.cuda.empty_cache()
         return output
     
@@ -962,7 +887,7 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         return output
     
     
-class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
+class QCustomLinearTorch(QuantizationHijacker, nn.Linear, QCustomTorchApprox):      
     def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
         x_bias = torch.tensor(5) if x_bias is None else x_bias
         res_bias = torch.tensor(5) if res_bias is None else res_bias
@@ -970,10 +895,21 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
         y_bias = y_bias.to(torch.int32)
         res_bias = res_bias.to(torch.int32)
         
-        expo_width = 3
-        mant_width = 4
-        dnsmp_factor = 3
-        comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        self.approx_params = self.get_approx_params()
+        # print(f"self.approx_params {self.approx_params}")
+        expo_width = self.approx_params['expo_width']
+        mant_width = self.approx_params['mant_width']
+        dnsmp_factor = self.approx_params['dnsmp_factor']
+        sim_hw_add_OFUF = self.approx_params['sim_hw_add_OFUF']
+        with_OF_opt = self.approx_params['with_OF_opt']
+        with_UF_opt = self.approx_params['with_UF_opt']
+        golden_clip_OF = self.approx_params['golden_clip_OF']
+        double_quant = self.approx_params['double_quant']
+        debug_mode = self.approx_params['debug_mode']
+        self_check_mode = self.approx_params['self_check_mode']
+
+        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+        comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor)
         
         if y.shape[1] != 1:
             results = []
@@ -981,17 +917,30 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
                 # print(f"x.shape: {x.shape}, y.shape: {y[:, i].unsqueeze(1).shape}")
                 if self.approx_flag:
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
-                                                    x_bias, y_bias[i], res_bias, 
+                                                    x_bias.item(), y_bias[i].item(), res_bias.item(), 
                                                     comp_table_NN)
                 elif self.quantize_after_mult_and_add:
                     result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
-                    result3d_quantized = self.res_quantizer(result3d)
+                    # result3d_quantized = self.res_quantizer(result3d)
+                    result3d_quantized, _ = quantize_to_fp8_ste_MM(result3d, self.res_quantizer.quantizer.n_bits, self.res_quantizer.quantizer.maxval, self.res_quantizer.quantizer.mantissa_bits, self.res_quantizer.quantizer.sign_bits)
+                    # result3d_quantized = result3d
                     result2d = result3d_quantized.sum(dim=1)
-                    result = self.res_quantizer(result2d)
+                    # result = self.res_quantizer(result2d)
+                    result, _ = quantize_to_fp8_ste_MM(result2d, self.res_quantizer.quantizer.n_bits, self.res_quantizer.quantizer.maxval, self.res_quantizer.quantizer.mantissa_bits, self.res_quantizer.quantizer.sign_bits)
+                    # result = result2d
                 else:
                     result = x @ y[:, i].unsqueeze(1)
                 results.append(result)
             output = torch.cat(results, dim=1)
+            if self.approx_flag:
+                print(f"approx output: {output}\napprox output.shape: {output.shape}")
+                print(f"bias: {res_bias}\nbias.shape: {res_bias.shape}")
+            elif self.quantize_after_mult_and_add:
+                print(f"qamaa output: {output}\nqamaa output.shape: {output.shape}")
+                print(f"qamaa bias: {res_bias}\nqamaa bias.shape: {res_bias.shape}")
+            else:
+                print(f"output: {output}\noutput.shape: {output.shape}")
+                print(f"bias: {res_bias}\nbias.shape: {res_bias.shape}")
         else:
             if self.approx_flag:
                 output = custom_matmul_vectorize(x, y, expo_width, mant_width,
@@ -1007,26 +956,7 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
     def multiply(self, x, y):
         # return np.multiply(x, y)
         return torch.matmul(x, y)
-        # expo_width = 3
-        # mant_width = 4
-        # dnsmp_factor = 3
-        
-        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
-        # sim_hw_add_OFUF = False
-        # with_OF_opt = False
-        # with_UF_opt = False
-        # debug_mode = False
 
-        # return custom_matmul_vectorize(x, y, 
-        #                                expo_width, 
-        #                                mant_width, 
-        #                                comp_table_NN   = comp_table_NN, 
-        #                                sim_hw_add_OFUF = sim_hw_add_OFUF, 
-        #                                with_OF_opt     = with_OF_opt, 
-        #                                with_UF_opt     = with_UF_opt, 
-        #                                golden_clip_OF  = False,
-        #                                debug_mode      = debug_mode,
-        #                                self_check_mode = False)
     
     def run_forward(self, x, weight, bias, offsets=None):
         x = x.contiguous()
