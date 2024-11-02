@@ -43,7 +43,7 @@ sh scripts/image_net.sh
    这里需要注意的是，如果要使 `QCustomLinearTorch` 等 `approx_calculation.py` 中算子中的 `self.get_res_fp_bias()` 能够正常工作，`BNFusedHijacker` 和 `QuantizationHijacker` 中 `forward` 中的 `res = self.res_quantizer(res)` 是需要保留的。
 
 3. 可以快速调整量化框架的 `mant_width` 和 `expo_width`，即在 `scripts/image_net.sh` 中修改 `mant_width`。  
-   但是目前仍然不能在脚本中快速调整 approx 算子或者说其中的 `approx_v8` 所用的 `mant_width` 以及 `dnsmp_factor` 等参数，这些参数需要在调整 `scripts/image_net.sh` 中 `mant_width` 后在 `/home/xinyuc/jiaxiang/FP8_quantization/approx/approx_calculation.py` 中大概526行的 `QCustomTorchApprox` 类中手动修改。
+   目前可以在脚本中快速调整 approx 算子或者说其中的 `approx_v9` 所用的 `mant_width` 以及 `dnsmp_factor` 等参数，以及算子运行时所需要的`--approx_flag`、`--quantize-after-mult-and-add`、`--res-quantizer-flag`等标志位。
 
 ## 选择空闲的 device
 
