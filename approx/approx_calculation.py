@@ -942,10 +942,6 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
         withComp = self.custom_approx_params['withComp']
         # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
-        print(f"expo_width: {expo_width}, mant_width: {mant_width}, dnsmp_factor: {dnsmp_factor}\n"+
-                  f"with_approx: {with_approx}, with_s2nn2s_opt: {with_s2nn2s_opt}, sim_hw_add_OFUF: {sim_hw_add_OFUF}\n"+
-                  f"with_OF_opt: {with_OF_opt}, with_UF_opt: {with_UF_opt}, golden_clip_OF: {golden_clip_OF}\n"+
-                  f"quant_btw_mult_accu: {quant_btw_mult_accu}, debug_mode: {debug_mode}, self_check_mode: {self_check_mode}")
         
         if y.shape[1] != 1:
             results = []
@@ -976,6 +972,10 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
             if self.approx_flag:
                 print(f"approx output: {output}\napprox output.shape: {output.shape}")
                 print(f"bias: {res_bias}\nbias.shape: {res_bias.shape}")
+                print(f"expo_width: {expo_width}, mant_width: {mant_width}, dnsmp_factor: {dnsmp_factor}\n"+
+                  f"with_approx: {with_approx}, with_s2nn2s_opt: {with_s2nn2s_opt}, sim_hw_add_OFUF: {sim_hw_add_OFUF}\n"+
+                  f"with_OF_opt: {with_OF_opt}, with_UF_opt: {with_UF_opt}, golden_clip_OF: {golden_clip_OF}\n"+
+                  f"quant_btw_mult_accu: {quant_btw_mult_accu}, debug_mode: {debug_mode}, self_check_mode: {self_check_mode}")
             elif self.quantize_after_mult_and_add:
                 print(f"qamaa output: {output}\nqamaa output.shape: {output.shape}")
                 print(f"qamaa bias: {res_bias}\nqamaa bias.shape: {res_bias.shape}")
