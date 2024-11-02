@@ -73,10 +73,12 @@ class QuantizationHijacker(QuantizedModule):
             qparams=self.weight_qparams,
             range_estim_params=weight_init_params,
         )
-
+        
     def forward(self, x, offsets=None):
-        self.approx_flag = False
-        self.quantize_after_mult_and_add = False
+        # print(f"self.custom_approx_params: {self.custom_approx_params}")
+        # print(f"run_method: {self.run_method}")
+        # self.approx_flag = False
+        # self.quantize_after_mult_and_add = False
         # Quantize input
         if self.quantize_input and self._quant_a:
             x = self.activation_quantizer(x)
@@ -85,15 +87,19 @@ class QuantizationHijacker(QuantizedModule):
         weight, bias = self.get_params()
         res = self.run_forward(x, weight, bias, offsets=offsets)
         
-        if self.quantize_input and self._quant_a:
+        if self.quantize_input and self._quant_a and self.res_quantizer_flag:
             res = self.res_quantizer(res)
 
-        # self.quantize_after_mult_and_add = True
-        # res = self.run_forward(x, weight, bias)
+        if self.res_quantizer_flag and self.quantize_after_mult_and_add:
+            res = self.run_forward(x, weight, bias)
         
-        self.approx_flag = True
-        res = self.run_forward(x, weight, bias, offsets=offsets)
+        if self.res_quantizer_flag and self.approx_flag:
+            res = self.run_forward(x, weight, bias, offsets=offsets)
 
+        if (self.quantize_after_mult_and_add or self.approx_flag) and not self.res_quantizer_flag:
+            raise ValueError("quantize_after_mult_and_add or approx_flag is set but res_quantizer_flag is not set. " + 
+                "you need to set res_quantizer_flag to True if you want to use quantize_after_mult_and_add or approx_flag")
+        
         # Apply fused activation function
         if self.activation_function is not None:
             res = self.activation_function(res)

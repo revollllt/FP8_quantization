@@ -17,6 +17,10 @@ from utils.click_options import (
     fp8_options,
     quant_params_dict,
     base_options,
+    approx_options,
+    approx_params_dict,
+    run_method_options,
+    run_method_dict,
 )
 from utils.qat_utils import get_dataloaders_and_model, ReestimateBNStats, get_model
 
@@ -50,13 +54,18 @@ pass_config = click.make_pass_decorator(Config, ensure=True)
     default="quantized",
     help='Either "fp32", or "quantized". Specify weather to load a quantized or a FP ' "model.",
 )
+@approx_options
+@run_method_options
 def validate_quantized(config, load_type):
     """
     function for running validation on pre-trained quantized models
     """
     print("Setting up network and data loaders")
     qparams = quant_params_dict(config)
-
+    approx_params = approx_params_dict(config)
+    run_method = run_method_dict(config)
+    qparams["custom_approx_params"] = approx_params
+    qparams["run_method"] = run_method
     dataloaders, model = get_dataloaders_and_model(config=config, load_type=load_type, **qparams)
     
     # from approx.replace_operations_in_mobilenet_v2 import replace_operations_in_mobilenet_v2_quantized
@@ -136,7 +145,7 @@ def validate_quantized(config, load_type):
     # BN Re-estimation
     if config.qat.reestimate_bn_stats:
         ReestimateBNStats(
-            model, dataloaders.train_loader, num_batches=int(0.02 * len(dataloaders.train_loader))
+            model, dataloaders.train_loader, num_batches=int(0.002 * len(dataloaders.train_loader)) # use 0.0002 * len(dataloaders.train_loader on the serve
         )(None)
 
     print("Start quantized validation")
@@ -170,11 +179,4 @@ def validate_quantized_demo(config, load_type):
     pass
 
 if __name__ == "__main__":
-    import argparse
-    from approx.approx_calculation import QCustomTorchApprox
-    parser = argparse.ArgumentParser(description="ImageNet Validation Script")
-    parser.add_argument('--expo-width', type=int, default=3, help='Exponent width for quantization')
-    parser.add_argument('--mant-width', type=int, default=4, help='Mantissa width for quantization')
-    parser.add_argument('--dnsmp-factor', type=int, default=3, help='Downsampling factor')
-    args, remaining_args = parser.parse_known_args()
-    fp8_cmd_group(remaining_args)
+    fp8_cmd_group()

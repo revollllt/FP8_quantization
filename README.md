@@ -53,3 +53,23 @@ nvitop
 
 ## 目前本地进行的工作
 主要是优化脚本的自动化操作，比如上述内容3中的approx算子如何放到scripts/image_net.sh脚本中一起修改，然后通过一个新的脚本去进行批量测试。
+
+
+## 新增image_net.sh参数
+--approx_flag/--no-approx_flag
+--quantize-after-mult-and-add/--no-quantize-after-mult-and-add
+--res-quantizer-flag/--no-res-quantizer-flag
+
+--expo-width ${expo_width}
+--mant-width ${mant_width}
+--dnsmp-factor ${dnsmp_factor}
+--withComp/--no-withComp
+--with_approx/--no-with_approx
+--with_s2nn2s_opt/--no-with_s2nn2s_opt
+--sim_hw_add_OFUF/--no-sim_hw_add_OFUF
+--with_OF_opt/--no-with_OF_opt
+--with_UF_opt/--no-with_UF_opt
+--golden-clip-OF/--no-golden-clip-OF
+--quant_btw_mult_accu/--no-quant_btw_mult_accu
+--debug-mode/--no-debug-mode
+--self-check-mode/--no-self-check-mode

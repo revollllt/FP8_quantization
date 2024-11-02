@@ -480,46 +480,62 @@ def fp8_options(func):
 
     return func_wrapper
 
-def approx_options(func):
-    # Approximation options
-    @click.option("--approx/--no-approx", is_flag=True, default=False)
-    @click.option("--expo-width", type=int, default=3)
-    @click.option("--mant-width", type=int, default=4)
-    @click.option("--dnsmp-factor", type=int, default=3, help="Down-Sample-Compensation factor")
-    @click.option("--withComp/--no-withComp", is_flag=True, default=False, help="Enable or disable withComp.")
-    @click.option("--sim-hw-add-OFUF/--no-sim-hw-add-OFUF", is_flag=True, default=False, help="Enable or disable sim-hw-add-OFUF.")
-    @click.option("--with-OF-opt/--no-with-OF-opt", is_flag=True, default=False, help="Enable or disable with-OF-opt.")
-    @click.option("--with-UF-opt/--no-with-UF-opt", is_flag=True, default=False, help="Enable or disable with-OF-UF-opt.")
-    @click.option("--golden-clip-OF/--no-golden-clip-OF", is_flag=True, default=False, help="Enable or disable golden-clip-OF.")
-    @click.option("--double-quant/--no-double-quant", is_flag=True, default=True, help="Enable or disable double-quant.")
-    @click.option("--debug-mode/--no-debug-mode", is_flag=True, default=False, help="Enable or disable debug-mode.")
-    @click.option("--self-check-mode/--no-self-check-mode", is_flag=True, default=False, help="Enable or disable self-check-mode.")
-    
+def run_method_options(func):
+    @click.option("--approx_flag/--no-approx_flag", is_flag=True, default=False, help="Enable or disable approx_flag in QuantizedModule.")
     @click.option("--quantize-after-mult-and-add/--no-quantize-after-mult-and-add", is_flag=True, default=False, help="Enable or disable quantize-after-mult-and-add.")
-    
+    @click.option("--res-quantizer-flag/--no-res-quantizer-flag", is_flag=True, default=False, help="Enable or disable res-quantizer.")
     @wraps(func)
-    def func_warrper(config, *args, **kwargs):
-        config.approx, remainder_kwargs = split_dict(
+    def func_wrapper(config, *args, **kwargs):
+        config.run_method, remainder_kwargs = split_dict(
             kwargs,
             [
-                "approx",
-                "expo_width",
-                "mant_width",
-                "dnsmp_factor",
-                "withComp",
-                "sim_hw_add_OFUF",
-                "with_OF_opt",
-                "with_UF_opt",
-                "golden_clip_OF",
-                "double_quant",
-                "debug_mode",
-                "self_check_mode",
+                "approx_flag",
                 "quantize_after_mult_and_add",
+                "res_quantizer_flag",
             ],
         )
         return func(config, *args, **remainder_kwargs)
     
-    return func_warrper
+    return func_wrapper
+
+def approx_options(func):
+    # Approximation options
+    @click.option("--expo-width", type=int, default=3)
+    @click.option("--mant-width", type=int, default=4)
+    @click.option("--dnsmp-factor", type=int, default=3, help="Down-Sample-Compensation factor")
+    @click.option("--withComp/--no-withComp", is_flag=True, default=False, help="Enable or disable withComp.")
+    @click.option("--with_approx/--no-with_approx", is_flag=True, default=False, help="Enable or disable with-approx in custom_matmul_vectorize.")
+    @click.option("--with_s2nn2s_opt/--no-with_s2nn2s_opt", is_flag=True, default=False, help="Enable or disable with-s2nn2s-opt.")
+    @click.option("--sim_hw_add_OFUF/--no-sim_hw_add_OFUF", is_flag=True, default=False, help="Enable or disable sim-hw-add-OFUF.")
+    @click.option("--with_OF_opt/--no-with_OF_opt", is_flag=True, default=False, help="Enable or disable with-OF-opt.")
+    @click.option("--with_UF_opt/--no-with_UF_opt", is_flag=True, default=False, help="Enable or disable with-OF-UF-opt.")
+    @click.option("--golden-clip-OF/--no-golden-clip-OF", is_flag=True, default=False, help="Enable or disable golden-clip-OF.")
+    @click.option("--quant_btw_mult_accu/--no-quant_btw_mult_accu", is_flag=True, default=True, help="Enable or disable double-quant.")
+    @click.option("--debug-mode/--no-debug-mode", is_flag=True, default=False, help="Enable or disable debug-mode.")
+    @click.option("--self-check-mode/--no-self-check-mode", is_flag=True, default=False, help="Enable or disable self-check-mode.")
+    @wraps(func)
+    def func_wrapper(config, *args, **kwargs):
+        config.approx, remainder_kwargs = split_dict(
+            kwargs,
+            [
+                "expo_width",
+                "mant_width",
+                "dnsmp_factor",
+                "withcomp",
+                "with_approx",
+                "with_s2nn2s_opt",
+                "sim_hw_add_ofuf", # 不可以使用大写字母
+                "with_of_opt",
+                "with_uf_opt",
+                "golden_clip_of",
+                "quant_btw_mult_accu",
+                "debug_mode",
+                "self_check_mode",
+            ],
+        )
+        return func(config, *args, **remainder_kwargs)
+    
+    return func_wrapper
 
 def quant_params_dict(config):
     weight_range_options = {}
@@ -555,3 +571,31 @@ def quant_params_dict(config):
     qparams["fp8_kwargs"] = fp8_kwargs
 
     return qparams
+
+def run_method_dict(config):
+    run_method = {
+        "approx_flag": config.run_method.approx_flag,
+        "quantize_after_mult_and_add": config.run_method.quantize_after_mult_and_add,
+        "res_quantizer_flag": config.run_method.res_quantizer_flag,
+    }
+    
+    return run_method
+
+def approx_params_dict(config):
+    approx_params = {
+        "expo_width": config.approx.expo_width,
+        "mant_width": config.approx.mant_width,
+        "dnsmp_factor": config.approx.dnsmp_factor,
+        "withComp": config.approx.withcomp,
+        "with_approx": config.approx.with_approx,
+        "with_s2nn2s_opt": config.approx.with_s2nn2s_opt,
+        "sim_hw_add_OFUF": config.approx.sim_hw_add_ofuf,
+        "with_OF_opt": config.approx.with_of_opt,
+        "with_UF_opt": config.approx.with_uf_opt,
+        "golden_clip_OF": config.approx.golden_clip_of,
+        "quant_btw_mult_accu": config.approx.quant_btw_mult_accu,
+        "debug_mode": config.approx.debug_mode,
+        "self_check_mode": config.approx.self_check_mode,
+    }
+    
+    return approx_params

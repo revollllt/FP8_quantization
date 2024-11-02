@@ -11,6 +11,8 @@ from utils.imagenet_dataloaders import ImageNetDataLoaders
 from tqdm import tqdm
 
 def get_dataloaders_and_model(config, load_type="fp32", **qparams):
+    # approx_params = qparams.pop('approx_params', {})
+    
     dataloaders = ImageNetDataLoaders(
         config.base.images_dir,
         224,

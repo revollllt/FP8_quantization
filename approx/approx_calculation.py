@@ -14,7 +14,8 @@ from quantization.quantized_folded_bn import BNFusedHijacker
 from quantization.quantizers.fp8_quantizer import quantize_to_fp8_ste_MM
 
 # from approx.approx_matmul_whole_v6 import *
-from approx.approx_matmul_whole_v8 import *
+# from approx.approx_matmul_whole_v8 import *
+from approx.approx_matmul_whole_v9 import *
 
 import time
 
@@ -523,29 +524,31 @@ class QCustomLinearCuPy(QuantizationHijacker, nn.Linear):
 '''
 CustomConv2dTorch with Quantization
 '''
-class QCustomTorchApprox():
-    def __init__(self):
-        super().__init__()
+# class QCustomTorchApprox():
+#     def __init__(self):
+#         super().__init__()
         
-    def get_approx_params(self):
-        self.approx_params = {
-            'expo_width'      : 3    ,    # The width of Exponent
-            'mant_width'      : 4    ,    # The width of Mantissa
-            'dnsmp_factor'    : 3    ,    # [3, 4, 5] Down-Sample-Compensation factor
-            'withComp'        : True,    # [False, True] (def. False) With Compensation opened or not
-            'sim_hw_add_OFUF' : False,    # [False, True] (def. False) 
-            'with_OF_opt'     : False,    # [False, True] (def. False) 
-            'with_UF_opt'     : False,    # [False, True] (def. False) 
-            'golden_clip_OF'  : False,    # [False, True] (def. False) 
-            'double_quant'    : True ,    # [False, True] (def. True ) Quant after both Mult & Accu
-            'debug_mode'      : False,    # [False, True] (def. False) Print some Tensors for debug
-            'self_check_mode' : False     # [False, True] (def. False) Open this together with dnsmp_factor >= mant_width
-        }
+#     def get_approx_params(self):
+#         self.approx_params = {
+#             'expo_width'          : 3    ,    # The width of Exponent
+#             'mant_width'          : 4    ,    # The width of Mantissa
+#             'dnsmp_factor'        : 3    ,    # [3, 4, 5] Down-Sample-Compensation factor
+#             'withComp'            : True ,    # [False, True] (def. False) With Compensation opened or not
+#             'with_approx'         : True ,
+#             'with_s2nn2s_opt'     : True ,
+#             'sim_hw_add_OFUF'     : False,    # [False, True] (def. False) 
+#             'with_OF_opt'         : False,    # [False, True] (def. False) 
+#             'with_UF_opt'         : False,    # [False, True] (def. False) 
+#             'golden_clip_OF'      : False,    # [False, True] (def. False)  
+#             'quant_btw_mult_accu' : True ,    # [False, True] (def. True ) Quant after both Mult & Accu
+#             'debug_mode'          : False,    # [False, True] (def. False) Print some Tensors for debug
+#             'self_check_mode'     : False     # [False, True] (def. False) Open this together with dnsmp_factor >= mant_width
+#         }
 
-        return self.approx_params
+#         return self.approx_params
 
 
-class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d, QCustomTorchApprox):
+class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
     def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
         batch_size, channels, height, width = input_data.shape
         
@@ -589,19 +592,21 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d, QCustomTorchApprox):
         y_bias = y_bias.to(torch.int32)
         res_bias = res_bias.to(torch.int32)
         
-        self.approx_params = self.get_approx_params()
+        # self.approx_params = self.get_approx_params()
         # print(f"self.approx_params {self.approx_params}")
-        expo_width = self.approx_params['expo_width']
-        mant_width = self.approx_params['mant_width']
-        dnsmp_factor = self.approx_params['dnsmp_factor']
-        sim_hw_add_OFUF = self.approx_params['sim_hw_add_OFUF']
-        with_OF_opt = self.approx_params['with_OF_opt']
-        with_UF_opt = self.approx_params['with_UF_opt']
-        golden_clip_OF = self.approx_params['golden_clip_OF']
-        double_quant = self.approx_params['double_quant']
-        debug_mode = self.approx_params['debug_mode']
-        self_check_mode = self.approx_params['self_check_mode']
-        withComp = self.approx_params['withComp']
+        expo_width = self.custom_approx_params['expo_width']
+        mant_width = self.custom_approx_params['mant_width']
+        dnsmp_factor = self.custom_approx_params['dnsmp_factor']
+        with_approx = self.custom_approx_params['with_approx']
+        with_s2nn2s_opt = self.custom_approx_params['with_s2nn2s_opt']
+        sim_hw_add_OFUF = self.custom_approx_params['sim_hw_add_OFUF']
+        with_OF_opt = self.custom_approx_params['with_OF_opt']
+        with_UF_opt = self.custom_approx_params['with_UF_opt']
+        golden_clip_OF = self.custom_approx_params['golden_clip_OF']
+        quant_btw_mult_accu = self.custom_approx_params['quant_btw_mult_accu']
+        debug_mode = self.custom_approx_params['debug_mode']
+        self_check_mode = self.custom_approx_params['self_check_mode']
+        withComp = self.custom_approx_params['withComp']
         # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
         
@@ -613,8 +618,10 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d, QCustomTorchApprox):
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
                                                     x_bias.item(), y_bias[i].item(), res_bias.item(), 
                                                     comp_table_NN,
+                                                    with_approx=with_approx,
+                                                    with_s2nn2s_opt=with_s2nn2s_opt,
                                                     sim_hw_add_OFUF=sim_hw_add_OFUF, with_OF_opt=with_OF_opt, with_UF_opt=with_UF_opt, golden_clip_OF=golden_clip_OF,
-                                                    double_quant=double_quant,
+                                                    quant_btw_mult_accu=quant_btw_mult_accu,
                                                     debug_mode=debug_mode, self_check_mode=self_check_mode)
                 elif self.quantize_after_mult_and_add:
                     result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
@@ -708,7 +715,7 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d, QCustomTorchApprox):
 
 
 
-class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d, QCustomTorchApprox):    
+class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):    
     def im2col(self, input_data, kernel_height, kernel_width, stride, padding, dilation):
         batch_size, channels, height, width = input_data.shape
         
@@ -741,19 +748,21 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d, QCustomTorchApprox):
         y_bias = y_bias.to(torch.int32)
         res_bias = res_bias.to(torch.int32)
         
-        self.approx_params = self.get_approx_params()
+        # self.approx_params = self.get_approx_params()
         # print(f"self.approx_params {self.approx_params}")
-        expo_width = self.approx_params['expo_width']
-        mant_width = self.approx_params['mant_width']
-        dnsmp_factor = self.approx_params['dnsmp_factor']
-        sim_hw_add_OFUF = self.approx_params['sim_hw_add_OFUF']
-        with_OF_opt = self.approx_params['with_OF_opt']
-        with_UF_opt = self.approx_params['with_UF_opt']
-        golden_clip_OF = self.approx_params['golden_clip_OF']
-        double_quant = self.approx_params['double_quant']
-        debug_mode = self.approx_params['debug_mode']
-        self_check_mode = self.approx_params['self_check_mode']
-        withComp = self.approx_params['withComp']
+        expo_width = self.custom_approx_params['expo_width']
+        mant_width = self.custom_approx_params['mant_width']
+        dnsmp_factor = self.custom_approx_params['dnsmp_factor']
+        with_approx = self.custom_approx_params['with_approx']
+        with_s2nn2s_opt = self.custom_approx_params['with_s2nn2s_opt']
+        sim_hw_add_OFUF = self.custom_approx_params['sim_hw_add_OFUF']
+        with_OF_opt = self.custom_approx_params['with_OF_opt']
+        with_UF_opt = self.custom_approx_params['with_UF_opt']
+        golden_clip_OF = self.custom_approx_params['golden_clip_OF']
+        quant_btw_mult_accu = self.custom_approx_params['quant_btw_mult_accu']
+        debug_mode = self.custom_approx_params['debug_mode']
+        self_check_mode = self.custom_approx_params['self_check_mode']
+        withComp = self.custom_approx_params['withComp']
         # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
         
@@ -765,8 +774,10 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d, QCustomTorchApprox):
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
                                                     x_bias.item(), y_bias[i].item(), res_bias.item(), 
                                                     comp_table_NN,
+                                                    with_approx=with_approx,
+                                                    with_s2nn2s_opt=with_s2nn2s_opt,
                                                     sim_hw_add_OFUF=sim_hw_add_OFUF, with_OF_opt=with_OF_opt, with_UF_opt=with_UF_opt, golden_clip_OF=golden_clip_OF,
-                                                    double_quant=double_quant,
+                                                    quant_btw_mult_accu=quant_btw_mult_accu,
                                                     debug_mode=debug_mode, self_check_mode=self_check_mode)
                 elif self.quantize_after_mult_and_add:
                     result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)
@@ -896,7 +907,7 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d, QCustomTorchApprox):
         return output
     
     
-class QCustomLinearTorch(QuantizationHijacker, nn.Linear, QCustomTorchApprox):      
+class QCustomLinearTorch(QuantizationHijacker, nn.Linear):      
     def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
         x_bias = torch.tensor(5) if x_bias is None else x_bias
         res_bias = torch.tensor(5) if res_bias is None else res_bias
@@ -904,19 +915,21 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear, QCustomTorchApprox):
         y_bias = y_bias.to(torch.int32)
         res_bias = res_bias.to(torch.int32)
         
-        self.approx_params = self.get_approx_params()
+        # self.approx_params = self.get_approx_params()
         # print(f"self.approx_params {self.approx_params}")
-        expo_width = self.approx_params['expo_width']
-        mant_width = self.approx_params['mant_width']
-        dnsmp_factor = self.approx_params['dnsmp_factor']
-        sim_hw_add_OFUF = self.approx_params['sim_hw_add_OFUF']
-        with_OF_opt = self.approx_params['with_OF_opt']
-        with_UF_opt = self.approx_params['with_UF_opt']
-        golden_clip_OF = self.approx_params['golden_clip_OF']
-        double_quant = self.approx_params['double_quant']
-        debug_mode = self.approx_params['debug_mode']
-        self_check_mode = self.approx_params['self_check_mode']
-        withComp = self.approx_params['withComp']
+        expo_width = self.custom_approx_params['expo_width']
+        mant_width = self.custom_approx_params['mant_width']
+        dnsmp_factor = self.custom_approx_params['dnsmp_factor']
+        with_approx = self.custom_approx_params['with_approx']
+        with_s2nn2s_opt = self.custom_approx_params['with_s2nn2s_opt']
+        sim_hw_add_OFUF = self.custom_approx_params['sim_hw_add_OFUF']
+        with_OF_opt = self.custom_approx_params['with_OF_opt']
+        with_UF_opt = self.custom_approx_params['with_UF_opt']
+        golden_clip_OF = self.custom_approx_params['golden_clip_OF']
+        quant_btw_mult_accu = self.custom_approx_params['quant_btw_mult_accu']
+        debug_mode = self.custom_approx_params['debug_mode']
+        self_check_mode = self.custom_approx_params['self_check_mode']
+        withComp = self.custom_approx_params['withComp']
         # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
         
@@ -928,8 +941,10 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear, QCustomTorchApprox):
                     result = custom_matmul_vectorize(x, y[:, i].unsqueeze(1), expo_width, mant_width,
                                                     x_bias.item(), y_bias[i].item(), res_bias.item(), 
                                                     comp_table_NN,
+                                                    with_approx=with_approx,
+                                                    with_s2nn2s_opt=with_s2nn2s_opt,
                                                     sim_hw_add_OFUF=sim_hw_add_OFUF, with_OF_opt=with_OF_opt, with_UF_opt=with_UF_opt, golden_clip_OF=golden_clip_OF,
-                                                    double_quant=double_quant,
+                                                    quant_btw_mult_accu=quant_btw_mult_accu,
                                                     debug_mode=debug_mode, self_check_mode=self_check_mode)
                 elif self.quantize_after_mult_and_add:
                     result3d = x.unsqueeze(2) * y[:, i].unsqueeze(1).unsqueeze(0)

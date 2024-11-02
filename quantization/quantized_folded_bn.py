@@ -28,8 +28,8 @@ class BNFusedHijacker(QuantizationHijacker):
         self.bias = None
 
     def forward(self, x):
-        self.approx_flag = False
-        self.quantize_after_mult_and_add = False
+        # self.approx_flag = False
+        # self.quantize_after_mult_and_add = False
         # Quantize input
         if self.quantize_input and self._quant_a:
             x = self.activation_quantizer(x)
@@ -38,14 +38,18 @@ class BNFusedHijacker(QuantizationHijacker):
         weight, bias = self.get_params()
         res = self.run_forward(x, weight, bias)
         
-        if self.quantize_input and self._quant_a:
+        if self.quantize_input and self._quant_a and self.res_quantizer_flag:
             res = self.res_quantizer(res)
+
+        if self.res_quantizer_flag and self.quantize_after_mult_and_add:
+            res = self.run_forward(x, weight, bias)
         
-        # self.quantize_after_mult_and_add = True
-        # res = self.run_forward(x, weight, bias)
-        
-        self.approx_flag = True
-        res = self.run_forward(x, weight, bias)
+        if self.res_quantizer_flag and self.approx_flag:
+            res = self.run_forward(x, weight, bias)
+
+        if (self.quantize_after_mult_and_add or self.approx_flag) and not self.res_quantizer_flag:
+            raise ValueError("quantize_after_mult_and_add or approx_flag is set but res_quantizer_flag is not set. " + 
+                "you need to set res_quantizer_flag to True if you want to use quantize_after_mult_and_add or approx_flag")
         
         # print(f"qamaa_res.shape: {res.shape}")
         # print(f"qaa_res.shape: {res1.shape}")

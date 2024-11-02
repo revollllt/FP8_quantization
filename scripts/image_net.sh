@@ -12,9 +12,9 @@ batch_size=16
 
 n_bits=8
 
-# expo_width=3
+expo_width=3
 mant_width=4
-# dnsmp_factor=3
+dnsmp_factor=3
 
 
 CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
@@ -35,7 +35,20 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --weight-quant-method=current_minmax \
     --act-quant-method=allminmax \
     --num-est-batches=1 \
-    --quantize-input 
-    # --expo-width ${expo_width} \
-    # --mant-width ${mant_width} \
-    # --dnsmp-factor ${dnsmp_factor}
+    --quantize-input \
+    --no-approx_flag \
+    --no-quantize-after-mult-and-add \
+    --no-res-quantizer-flag \
+    --expo-width ${expo_width} \
+    --mant-width ${mant_width} \
+    --dnsmp-factor ${dnsmp_factor} \
+    --withComp \
+    --with_approx \
+    --with_s2nn2s_opt \
+    --no-sim_hw_add_OFUF \
+    --no-with_OF_opt \
+    --no-with_UF_opt \
+    --no-golden-clip-OF \
+    --quant_btw_mult_accu \
+    --no-debug-mode \
+    --no-self-check-mode 

@@ -70,7 +70,12 @@ class QuantizedModule(nn.Module):
         **kwargs
     ):
         kwargs.pop("act_quant_dict", None)
-
+        self.custom_approx_params = kwargs.pop("custom_approx_params", None)
+        self.run_method = kwargs.pop("run_method", None)
+        self.approx_flag = self.run_method["approx_flag"]
+        self.quantize_after_mult_and_add = self.run_method["quantize_after_mult_and_add"]
+        self.res_quantizer_flag = self.run_method["res_quantizer_flag"]
+        
         super().__init__(*args, **kwargs)
 
         self.method = method
@@ -104,8 +109,6 @@ class QuantizedModule(nn.Module):
             **self.fp8_kwargs
         )
         
-        self.approx_flag = False
-        self.quantize_after_mult_and_add = False
 
     def quantized_weights(self):
         self._quant_w = torch.BoolTensor([True])
