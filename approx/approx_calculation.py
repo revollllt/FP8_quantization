@@ -640,7 +640,12 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
             if self.approx_flag:
                 output = custom_matmul_vectorize(x, y, expo_width, mant_width,
                                 x_bias, y_bias, res_bias,
-                                comp_table_NN,)
+                                comp_table_NN,
+                                with_approx=with_approx,
+                                with_s2nn2s_opt=with_s2nn2s_opt,
+                                sim_hw_add_OFUF=sim_hw_add_OFUF, with_OF_opt=with_OF_opt, with_UF_opt=with_UF_opt, golden_clip_OF=golden_clip_OF,
+                                quant_btw_mult_accu=quant_btw_mult_accu,
+                                debug_mode=debug_mode, self_check_mode=self_check_mode)
             else:
                 output = x @ y
         
@@ -796,7 +801,12 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
             if self.approx_flag:
                 output = custom_matmul_vectorize(x, y, expo_width, mant_width,
                                 x_bias, y_bias, res_bias,
-                                comp_table_NN,)
+                                comp_table_NN,
+                                with_approx=with_approx,
+                                with_s2nn2s_opt=with_s2nn2s_opt,
+                                sim_hw_add_OFUF=sim_hw_add_OFUF, with_OF_opt=with_OF_opt, with_UF_opt=with_UF_opt, golden_clip_OF=golden_clip_OF,
+                                quant_btw_mult_accu=quant_btw_mult_accu,
+                                debug_mode=debug_mode, self_check_mode=self_check_mode)
             else:
                 output = x @ y
         
@@ -932,6 +942,10 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
         withComp = self.custom_approx_params['withComp']
         # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
+        print(f"expo_width: {expo_width}, mant_width: {mant_width}, dnsmp_factor: {dnsmp_factor}\n"+
+                  f"with_approx: {with_approx}, with_s2nn2s_opt: {with_s2nn2s_opt}, sim_hw_add_OFUF: {sim_hw_add_OFUF}\n"+
+                  f"with_OF_opt: {with_OF_opt}, with_UF_opt: {with_UF_opt}, golden_clip_OF: {golden_clip_OF}\n"+
+                  f"quant_btw_mult_accu: {quant_btw_mult_accu}, debug_mode: {debug_mode}, self_check_mode: {self_check_mode}")
         
         if y.shape[1] != 1:
             results = []
@@ -972,7 +986,12 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
             if self.approx_flag:
                 output = custom_matmul_vectorize(x, y, expo_width, mant_width,
                                 x_bias, y_bias, res_bias,
-                                comp_table_NN,)
+                                comp_table_NN,
+                                with_approx=with_approx,
+                                with_s2nn2s_opt=with_s2nn2s_opt,
+                                sim_hw_add_OFUF=sim_hw_add_OFUF, with_OF_opt=with_OF_opt, with_UF_opt=with_UF_opt, golden_clip_OF=golden_clip_OF,
+                                quant_btw_mult_accu=quant_btw_mult_accu,
+                                debug_mode=debug_mode, self_check_mode=self_check_mode)
             else:
                 output = x @ y
         

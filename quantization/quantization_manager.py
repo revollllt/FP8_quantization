@@ -60,7 +60,7 @@ class QuantizationManager(nn.Module):
         range_estim_params=None,
     ):
         super().__init__()
-        self.state = Qstates.estimate_ranges
+        self.state = Qstates.estimate_ranges  # default state, so pass_data_for_range_estimation at first
         self.qmethod = qmethod
         self.init = init
         self.per_channel = per_channel
