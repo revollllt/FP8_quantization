@@ -62,6 +62,7 @@ nvitop
 - `--approx_flag` / `--no-approx_flag`  
 - `--quantize-after-mult-and-add` / `--no-quantize-after-mult-and-add`  
 - `--res-quantizer-flag` / `--no-res-quantizer-flag`  
+- `--original-quantize-res` / `--no-original-quantize-res`
 
 - `--expo-width ${expo_width}`  
 - `--mant-width ${mant_width}`  
@@ -76,3 +77,4 @@ nvitop
 - `--quant_btw_mult_accu` / `--no-quant_btw_mult_accu`  
 - `--debug-mode` / `--no-debug-mode`  
 - `--self-check-mode` / `--no-self-check-mode`  
+- `--approx-output-dir ${--approx-output-dir}`

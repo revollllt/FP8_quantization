@@ -151,10 +151,34 @@ def validate_quantized(config, load_type):
     print("Start quantized validation")
     random_sampler = CustomBatchSampler(dataloaders.val_loader, num_batches=10, start_index=5, step=300)
     # evaluator.run(dataloaders.val_loader)
+    # evaluate_param = "full_test"
+    evaluate_param = "mini_test"
     with torch.inference_mode():
-        evaluator.run(random_sampler)
+        if evaluate_param == "full_test":
+            evaluator.run(dataloaders.val_loader)
+        elif evaluate_param == "mini_test":
+            evaluator.run(random_sampler)
     final_metrics = evaluator.state.metrics
     print(final_metrics)
+    print(f"run_method: {run_method}")
+    print(f"approx_params: {approx_params}")
+    print(f"evaluate_param: {evaluate_param}")
+    if config.approx.approx_output_dir is not None:
+        import datetime
+        output_dir = config.approx.approx_output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        expo_width = approx_params["expo_width"]
+        mant_width = approx_params["mant_width"]
+        dnsmp_factor = approx_params["dnsmp_factor"]
+        current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        output_dir = os.path.join(output_dir, "E{}M{}D{}".format(expo_width, mant_width, dnsmp_factor))
+        os.makedirs(output_dir, exist_ok=True)
+        output_file_path = output_dir + f"_{current_time}.txt"
+        with open(output_file_path, "w") as f:
+            f.write(f"evaluate_param: {evaluate_param}\n")
+            f.write(f"run_method: {run_method}\n")
+            f.write(f"approx_params: {approx_params}\n")
+            f.write(f"final_metrics: {final_metrics}\n")
 
 
 @fp8_cmd_group.command()

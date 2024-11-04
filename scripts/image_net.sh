@@ -16,6 +16,7 @@ expo_width=3
 mant_width=4
 dnsmp_factor=3
 
+approx_out_dir="/home/zou/codes/FP8-quantization/approx_output"
 
 CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --images-dir ${image_dir} \
@@ -36,9 +37,10 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --act-quant-method=allminmax \
     --num-est-batches=1 \
     --quantize-input \
-    --no-approx_flag \
+    --approx_flag \
     --no-quantize-after-mult-and-add \
-    --no-res-quantizer-flag \
+    --res-quantizer-flag \
+    --no-original-quantize-res \
     --expo-width ${expo_width} \
     --mant-width ${mant_width} \
     --dnsmp-factor ${dnsmp_factor} \
@@ -51,4 +53,5 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --no-golden-clip-OF \
     --quant_btw_mult_accu \
     --no-debug-mode \
-    --no-self-check-mode 
+    --no-self-check-mode \
+    --approx-output-dir ${approx_out_dir} 

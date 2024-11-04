@@ -75,6 +75,10 @@ class QuantizedModule(nn.Module):
         self.approx_flag = self.run_method["approx_flag"]
         self.quantize_after_mult_and_add = self.run_method["quantize_after_mult_and_add"]
         self.res_quantizer_flag = self.run_method["res_quantizer_flag"]
+        self.original_quantize_res = self.run_method["original_quantize_res"]
+        # self.approx_flag_base = self.run_method["approx_flag"]
+        # self.quantize_after_mult_and_add_base = self.run_method["quantize_after_mult_and_add"]
+        # self.res_quantizer_flag_base = self.run_method["res_quantizer_flag"]
         
         super().__init__(*args, **kwargs)
 
@@ -108,6 +112,11 @@ class QuantizedModule(nn.Module):
             **weight_quant_kwargs,
             **self.fp8_kwargs
         )
+        
+        self.fix_ranges_flag = False
+        # self.approx_flag = False
+        # self.quantize_after_mult_and_add = False
+        # self.res_quantizer_flag = False
         
 
     def quantized_weights(self):
@@ -149,9 +158,11 @@ class QuantizedModule(nn.Module):
 
     def fix_ranges(self):
         self.apply(_set_layer_fix_ranges)
+        self.fix_ranges_flag = True
 
     def estimate_ranges(self):
         self.apply(_set_layer_estimate_ranges)
+        self.fix_ranges_flag = False
 
     def estimate_ranges_train(self):
         self.apply(_set_layer_estimate_ranges_train)

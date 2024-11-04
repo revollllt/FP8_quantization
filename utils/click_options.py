@@ -484,6 +484,7 @@ def run_method_options(func):
     @click.option("--approx_flag/--no-approx_flag", is_flag=True, default=False, help="Enable or disable approx_flag in QuantizedModule.")
     @click.option("--quantize-after-mult-and-add/--no-quantize-after-mult-and-add", is_flag=True, default=False, help="Enable or disable quantize-after-mult-and-add.")
     @click.option("--res-quantizer-flag/--no-res-quantizer-flag", is_flag=True, default=False, help="Enable or disable res-quantizer.")
+    @click.option("--original-quantize-res/--no-original-quantize-res", is_flag=True, default=False, help="Enable or disable original-quantize-res.")
     @wraps(func)
     def func_wrapper(config, *args, **kwargs):
         config.run_method, remainder_kwargs = split_dict(
@@ -492,6 +493,7 @@ def run_method_options(func):
                 "approx_flag",
                 "quantize_after_mult_and_add",
                 "res_quantizer_flag",
+                "original_quantize_res",
             ],
         )
         return func(config, *args, **remainder_kwargs)
@@ -513,6 +515,7 @@ def approx_options(func):
     @click.option("--quant_btw_mult_accu/--no-quant_btw_mult_accu", is_flag=True, default=True, help="Enable or disable double-quant.")
     @click.option("--debug-mode/--no-debug-mode", is_flag=True, default=False, help="Enable or disable debug-mode.")
     @click.option("--self-check-mode/--no-self-check-mode", is_flag=True, default=False, help="Enable or disable self-check-mode.")
+    @click.option("--approx-output-dir", type=click.Path(exists=False), help="Output directory for the results.")
     @wraps(func)
     def func_wrapper(config, *args, **kwargs):
         config.approx, remainder_kwargs = split_dict(
@@ -531,6 +534,7 @@ def approx_options(func):
                 "quant_btw_mult_accu",
                 "debug_mode",
                 "self_check_mode",
+                "approx_output_dir",
             ],
         )
         return func(config, *args, **remainder_kwargs)
@@ -577,6 +581,7 @@ def run_method_dict(config):
         "approx_flag": config.run_method.approx_flag,
         "quantize_after_mult_and_add": config.run_method.quantize_after_mult_and_add,
         "res_quantizer_flag": config.run_method.res_quantizer_flag,
+        "original_quantize_res": config.run_method.original_quantize_res,
     }
     
     return run_method

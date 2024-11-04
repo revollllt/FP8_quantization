@@ -30,16 +30,22 @@ class BNFusedHijacker(QuantizationHijacker):
     def forward(self, x):
         # self.approx_flag = False
         # self.quantize_after_mult_and_add = False
+        # self.res_quantizer_flag = False
         # Quantize input
         if self.quantize_input and self._quant_a:
             x = self.activation_quantizer(x)
 
         # Get quantized weight
         weight, bias = self.get_params()
-        res = self.run_forward(x, weight, bias)
-        
-        if self.quantize_input and self._quant_a and self.res_quantizer_flag:
-            res = self.res_quantizer(res)
+        if self.fix_ranges_flag == True or self.original_quantize_res:
+            res = self.run_forward(x, weight, bias)
+            
+            # self.approx_flag = self.approx_flag_base
+            # self.quantize_after_mult_and_add = self.quantize_after_mult_and_add_base
+            # self.res_quantizer_flag = self.res_quantizer_flag_base
+            
+            if self.quantize_input and self._quant_a and self.res_quantizer_flag:
+                res = self.res_quantizer(res)
 
         if self.res_quantizer_flag and self.quantize_after_mult_and_add:
             res = self.run_forward(x, weight, bias)

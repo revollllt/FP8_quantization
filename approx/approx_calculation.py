@@ -586,12 +586,6 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
     #     return input_unfold  # 形状: (batch_size, channels * kernel_height * kernel_width, L)
     
     def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
-        x_bias = torch.tensor(5) if x_bias is None else x_bias
-        res_bias = torch.tensor(5) if res_bias is None else res_bias
-        x_bias = x_bias.to(torch.int32)
-        y_bias = y_bias.to(torch.int32)
-        res_bias = res_bias.to(torch.int32)
-        
         # self.approx_params = self.get_approx_params()
         # print(f"self.approx_params {self.approx_params}")
         expo_width = self.custom_approx_params['expo_width']
@@ -607,7 +601,13 @@ class QCustomConv2dTorch(QuantizationHijacker, nn.Conv2d):
         debug_mode = self.custom_approx_params['debug_mode']
         self_check_mode = self.custom_approx_params['self_check_mode']
         withComp = self.custom_approx_params['withComp']
-        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+
+        x_bias = torch.tensor(2**(expo_width-1)) if x_bias is None else x_bias
+        res_bias = torch.tensor(2**(expo_width-1)) if res_bias is None else res_bias
+        x_bias = x_bias.to(torch.int32)
+        y_bias = y_bias.to(torch.int32)
+        res_bias = res_bias.to(torch.int32)
+        
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
         
         if y.shape[1] != 1:
@@ -747,12 +747,6 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         return col
     
     def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
-        x_bias = torch.tensor(5) if x_bias is None else x_bias
-        res_bias = torch.tensor(5) if res_bias is None else res_bias
-        x_bias = x_bias.to(torch.int32)
-        y_bias = y_bias.to(torch.int32)
-        res_bias = res_bias.to(torch.int32)
-        
         # self.approx_params = self.get_approx_params()
         # print(f"self.approx_params {self.approx_params}")
         expo_width = self.custom_approx_params['expo_width']
@@ -768,7 +762,13 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
         debug_mode = self.custom_approx_params['debug_mode']
         self_check_mode = self.custom_approx_params['self_check_mode']
         withComp = self.custom_approx_params['withComp']
-        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+
+        x_bias = torch.tensor(2**(expo_width-1)) if x_bias is None else x_bias
+        res_bias = torch.tensor(2**(expo_width-1)) if res_bias is None else res_bias
+        x_bias = x_bias.to(torch.int32)
+        y_bias = y_bias.to(torch.int32)
+        res_bias = res_bias.to(torch.int32)
+        
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
         
         if y.shape[1] != 1:
@@ -919,12 +919,6 @@ class QCustomBNConv2dTorch(BNFusedHijacker, nn.Conv2d):
     
 class QCustomLinearTorch(QuantizationHijacker, nn.Linear):      
     def approx_multiply(self, x, y, x_bias, y_bias, res_bias):
-        x_bias = torch.tensor(5) if x_bias is None else x_bias
-        res_bias = torch.tensor(5) if res_bias is None else res_bias
-        x_bias = x_bias.to(torch.int32)
-        y_bias = y_bias.to(torch.int32)
-        res_bias = res_bias.to(torch.int32)
-        
         # self.approx_params = self.get_approx_params()
         # print(f"self.approx_params {self.approx_params}")
         expo_width = self.custom_approx_params['expo_width']
@@ -940,7 +934,13 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
         debug_mode = self.custom_approx_params['debug_mode']
         self_check_mode = self.custom_approx_params['self_check_mode']
         withComp = self.custom_approx_params['withComp']
-        # comp_table_NN = get_comp_table_NN(expo_width, mant_width, withComp=True, dnsmp_factor=dnsmp_factor, device=x.device)
+
+        x_bias = torch.tensor(2**(expo_width-1)) if x_bias is None else x_bias
+        res_bias = torch.tensor(2**(expo_width-1)) if res_bias is None else res_bias
+        x_bias = x_bias.to(torch.int32)
+        y_bias = y_bias.to(torch.int32)
+        res_bias = res_bias.to(torch.int32)
+        
         comp_table_NN = get_error_table_NN(expo_width, mant_width, withComp=withComp, dnsmp_factor=dnsmp_factor)
         
         if y.shape[1] != 1:
@@ -972,7 +972,7 @@ class QCustomLinearTorch(QuantizationHijacker, nn.Linear):
             if self.approx_flag:
                 print(f"approx output: {output}\napprox output.shape: {output.shape}")
                 print(f"bias: {res_bias}\nbias.shape: {res_bias.shape}")
-                print(f"expo_width: {expo_width}, mant_width: {mant_width}, dnsmp_factor: {dnsmp_factor}\n"+
+                print(f"expo_width: {expo_width}, mant_width: {mant_width}, dnsmp_factor: {dnsmp_factor}, withComp: {withComp}\n"+
                   f"with_approx: {with_approx}, with_s2nn2s_opt: {with_s2nn2s_opt}, sim_hw_add_OFUF: {sim_hw_add_OFUF}\n"+
                   f"with_OF_opt: {with_OF_opt}, with_UF_opt: {with_UF_opt}, golden_clip_OF: {golden_clip_OF}\n"+
                   f"quant_btw_mult_accu: {quant_btw_mult_accu}, debug_mode: {debug_mode}, self_check_mode: {self_check_mode}")
