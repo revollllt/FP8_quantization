@@ -33,6 +33,8 @@ pip install -r requirements.txt
 sh scripts/image_net.sh
  ```
 
+## update your own path in generated_scripts.py\delete_scripts.py\run_scripts.py
+
 
 ## 选择approx算子所需要的操作
 
