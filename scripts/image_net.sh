@@ -6,7 +6,8 @@ seed=10
 image_dir="/home/zou/data/ImageNet"
 model_dir="/home/zou/codes/FP8-quantization/model_dir/mobilenet_v2.pth.tar"
 
-architecture="mobilenet_v2_quantized_approx"
+# architecture="mobilenet_v2_quantized_approx"
+architecture="vit_quantized"
 
 batch_size=16
 
@@ -16,7 +17,7 @@ expo_width=3
 mant_width=4
 dnsmp_factor=3
 
-approx_out_dir="/home/zou/codes/FP8-quantization/approx_output"
+approx_output_dir="/home/zou/codes/FP8-quantization/approx_output"
 
 CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --images-dir ${image_dir} \
@@ -37,10 +38,10 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --act-quant-method=allminmax \
     --num-est-batches=1 \
     --quantize-input \
-    --approx_flag \
+    --no-approx_flag \
     --no-quantize-after-mult-and-add \
     --res-quantizer-flag \
-    --no-original-quantize-res \
+    --original-quantize-res \
     --expo-width ${expo_width} \
     --mant-width ${mant_width} \
     --dnsmp-factor ${dnsmp_factor} \
@@ -51,7 +52,7 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \
     --no-with_OF_opt \
     --no-with_UF_opt \
     --no-golden-clip-OF \
-    --quant_btw_mult_accu \
+    --no-quant_btw_mult_accu \
     --no-debug-mode \
     --no-self-check-mode \
-    --approx-output-dir ${approx_out_dir} 
+    --approx-output-dir ${approx_output_dir} 

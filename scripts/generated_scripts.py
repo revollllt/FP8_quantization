@@ -12,6 +12,7 @@ n_bits={n_bits}
 expo_width={expo_width}
 mant_width={mant_width}
 dnsmp_factor={dnsmp_factor}
+approx_output_dir={approx_output_dir}
 
 CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \\
     --images-dir ${{image_dir}} \\
@@ -35,6 +36,7 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \\
     {approx_flag} \\
     {quantize_after_mult_and_add_flag} \\
     {res_quantizer_flag} \\
+    --no-original-quantize-res \\
     --expo-width ${{expo_width}} \\
     --mant-width ${{mant_width}} \\
     --dnsmp-factor ${{dnsmp_factor}} \\
@@ -47,7 +49,8 @@ CUDA_VISIBLE_DEVICES=$device python image_net.py validate-quantized \\
     --no-golden-clip-OF \\
     {quant_btw_mult_accu_flag} \\
     --no-debug-mode \\
-    --no-self-check-mode
+    --no-self-check-mode \\
+    --approx-output-dir ${{approx_output_dir}} 
 """
 # 生成不同 flag 组合的 shell 脚本
 device = 0
@@ -60,12 +63,13 @@ n_bits = 8
 expo_width = 3
 mant_width = 4
 # dnsmp_factor = 3
+approx_output_dir = "/home/zou/codes/FP8-quantization/approx_output"
 
 
 # run_method flags
 approx_flag = ["--approx_flag", "--no-approx_flag"]
-quantize_after_mult_and_add_flag = ["--quantize_after_mult_and_add", "--no-quantize_after_mult_and_add"]
-res_quantizer_flag = ["--res_quantizer_flag", "--no-res_quantizer_flag"]
+quantize_after_mult_and_add_flag = ["--quantize-after-mult-and-add", "--no-quantize-after-mult-and-add"]
+res_quantizer_flag = ["--res-quantizer-flag", "--no-original-quantize-res"]
 
 # approx_options flags
 withComp_flag = ["--withComp", "--no-withComp"]
@@ -96,6 +100,7 @@ for i0, withComp in enumerate(withComp_flag):
                     expo_width=expo_width,
                     mant_width=mant_width,
                     dnsmp_factor=dnsmp_factor,
+                    approx_output_dir=approx_output_dir,
                     approx_flag=approx_flag[0],
                     quantize_after_mult_and_add_flag=quantize_after_mult_and_add_flag[1],
                     res_quantizer_flag=res_quantizer_flag[0],

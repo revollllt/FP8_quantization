@@ -83,7 +83,7 @@ class QuantizationHijacker(QuantizedModule):
             x = self.activation_quantizer(x)
 
         # Get quantized weight
-        print(f"fix_ranges_flag: {self.fix_ranges_flag}, original_quantize_res: {self.original_quantize_res}")
+        # print(f"fix_ranges_flag: {self.fix_ranges_flag}, original_quantize_res: {self.original_quantize_res}")
         weight, bias = self.get_params()
         if self.fix_ranges_flag == False or self.original_quantize_res:
             res = self.run_forward(x, weight, bias, offsets=offsets)

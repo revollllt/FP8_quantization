@@ -1,3 +1,0 @@
-run_method: {'approx_flag': False, 'quantize_after_mult_and_add': False, 'res_quantizer_flag': False, 'original_quantize_res': False}
-approx_params: {'expo_width': 3, 'mant_width': 4, 'dnsmp_factor': 3, 'withComp': True, 'with_approx': True, 'with_s2nn2s_opt': True, 'sim_hw_add_OFUF': False, 'with_OF_opt': False, 'with_UF_opt': False, 'golden_clip_OF': False, 'quant_btw_mult_accu': True, 'debug_mode': False, 'self_check_mode': False}
-final_metrics: {'top_1_accuracy': 0.6625, 'top_5_accuracy': 0.89375, 'loss': 1.1115644454956055}

@@ -60,10 +60,12 @@ class ReestimateBNStats:
 def reestimate_BN_stats(model, data_loader, num_batches=50, store_ema_stats=False):
     # We set BN momentum to 1 an use train mode
     # -> the running mean/var have the current batch statistics
+    BN_flag = False
     model.eval()
     org_momentum = {}
     for name, module in model.named_modules():
         if isinstance(module, BNFusedHijacker):
+            BN_flag = True
             org_momentum[name] = module.momentum
             module.momentum = 1.0
             module.running_mean_sum = torch.zeros_like(module.running_mean)
@@ -83,18 +85,19 @@ def reestimate_BN_stats(model, data_loader, num_batches=50, store_ema_stats=Fals
     # Run data for estimation
     device = next(model.parameters()).device
     batch_count = 0
-    with torch.no_grad():
-        for x, y in tqdm(data_loader):
-            model(x.to(device))
-            # We save the running mean/var to a buffer
-            for name, module in model.named_modules():
-                if isinstance(module, BNFusedHijacker):
-                    module.running_mean_sum += module.running_mean
-                    module.running_var_sum += module.running_var
+    if BN_flag:
+        with torch.no_grad():
+            for x, y in tqdm(data_loader):
+                model(x.to(device))
+                # We save the running mean/var to a buffer
+                for name, module in model.named_modules():
+                    if isinstance(module, BNFusedHijacker):
+                        module.running_mean_sum += module.running_mean
+                        module.running_var_sum += module.running_var
 
-            batch_count += 1
-            if batch_count == num_batches:
-                break
+                batch_count += 1
+                if batch_count == num_batches:
+                    break
     # At the end we normalize the buffer and write it into the running mean/var
     for name, module in model.named_modules():
         if isinstance(module, BNFusedHijacker):

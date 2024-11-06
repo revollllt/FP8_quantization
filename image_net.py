@@ -166,6 +166,8 @@ def validate_quantized(config, load_type):
     if config.approx.approx_output_dir is not None:
         import datetime
         output_dir = config.approx.approx_output_dir
+        arch = str(config.base.architecture)
+        output_dir = os.path.join(output_dir, arch)
         os.makedirs(output_dir, exist_ok=True)
         expo_width = approx_params["expo_width"]
         mant_width = approx_params["mant_width"]
@@ -173,7 +175,7 @@ def validate_quantized(config, load_type):
         current_time = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         output_dir = os.path.join(output_dir, "E{}M{}D{}".format(expo_width, mant_width, dnsmp_factor))
         os.makedirs(output_dir, exist_ok=True)
-        output_file_path = output_dir + f"_{current_time}.txt"
+        output_file_path = output_dir + f"/D{dnsmp_factor}_{current_time}.txt"
         with open(output_file_path, "w") as f:
             f.write(f"evaluate_param: {evaluate_param}\n")
             f.write(f"run_method: {run_method}\n")
