@@ -6,8 +6,9 @@ seed=10
 image_dir="/home/zou/data/ImageNet"
 model_dir="/home/zou/codes/FP8-quantization/model_dir/mobilenet_v2.pth.tar"
 
-# architecture="mobilenet_v2_quantized_approx"
-architecture="vit_quantized"
+architecture="mobilenet_v2_quantized_approx"
+# architecture="resnet18_quantized_approx"
+# architecture="vit_quantized"
 
 batch_size=16
 

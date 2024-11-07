@@ -81,6 +81,10 @@ quant_btw_mult_accu_flag = ["--quant_btw_mult_accu", "--no-quant_btw_mult_accu"]
 # 创建输出目录
 output_dir = "/home/zou/codes/FP8-quantization/scripts/generated_scripts"
 os.makedirs(output_dir, exist_ok=True)
+output_dir = os.path.join(output_dir, architecture)
+os.makedirs(output_dir, exist_ok=True)
+output_dir = os.path.join(output_dir, "E{}M{}".format(expo_width, mant_width))
+os.makedirs(output_dir, exist_ok=True)
 
 exit_loop = False
 

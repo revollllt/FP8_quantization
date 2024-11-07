@@ -73,7 +73,7 @@ def validate_quantized(config, load_type):
     # if config.base.cuda:
     #     model = model.cuda()
     # print("replace done")
-
+    model.estimate_ranges()
     if load_type == "fp32":
         # Estimate ranges using training data
         pass_data_for_range_estimation(
@@ -134,12 +134,31 @@ def validate_quantized(config, load_type):
         "loss": Loss(loss_func),
     }
 
-    pbar = ProgressBar()
+    pbar = ProgressBar(persist=True)
     evaluator = create_supervised_evaluator(
         model=model, metrics=metrics, device="cuda" if config.base.cuda else "cpu"
     )
-    pbar.attach(evaluator)
-    print("Model with the ranges estimated:\n{}".format(model))
+    pbar.attach(evaluator, metric_names="all")
+    @evaluator.on(Events.ITERATION_COMPLETED)
+    def log_batch_metrics(engine):
+        metrics = engine.state.metrics
+        # print(engine.state)
+        # print(engine.state.seed)
+        accuracy = metrics["top_1_accuracy"]
+        loss = metrics["loss"]
+        pbar.log_message(f"accuracy: {accuracy:.4f} | loss: {loss:.4f}")
+    evaluator.add_event_handler(Events.ITERATION_COMPLETED)
+    # # 在EPOCH_COMPLETED事件上手动更新进度条显示指标
+    # @evaluator.on(Events.EPOCH_COMPLETED)
+    # def log_metrics(engine):
+    #     metrics = evaluator.state.metrics
+    #     avg_accuracy = metrics["top_1_accuracy"]
+    #     avg_loss = metrics["loss"]
+    #     print(f"Validation Results - Avg accuracy: {avg_accuracy:.4f} Avg loss: {avg_loss:.4f}")
+    #     # 更新进度条显示
+    #     pbar.log_message(f"accuracy: {avg_accuracy:.4f} | loss: {avg_loss:.4f}")
+        
+    #     print("Model with the ranges estimated:\n{}".format(model))
 
     
     # BN Re-estimation
