@@ -37,7 +37,7 @@ class BNFusedHijacker(QuantizationHijacker):
 
         # Get quantized weight
         weight, bias = self.get_params()
-        if self.fix_ranges_flag == True or self.original_quantize_res:
+        if self.fix_ranges_flag == False or self.original_quantize_res:
             res = self.run_forward(x, weight, bias)
             
             # self.approx_flag = self.approx_flag_base

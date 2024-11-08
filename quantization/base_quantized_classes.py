@@ -24,11 +24,15 @@ def _set_layer_fix_ranges(layer):
     if isinstance(layer, QuantizationManager):
         if layer.quantizer.is_initialized:
             layer.fix_ranges()
+    if isinstance(layer, QuantizedModule):
+        layer.fix_ranges_flag = True
 
 
 def _set_layer_estimate_ranges(layer):
     if isinstance(layer, QuantizationManager):
         layer.estimate_ranges()
+    if isinstance(layer, QuantizedModule):
+        layer.fix_ranges_flag = False
 
 
 def _set_layer_estimate_ranges_train(layer):
